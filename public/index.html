@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CPO-13">
+<meta name="theme-color" content="#00aaff">
+<meta name="description" content="Ensayo de Pozos Productores – Área Operativa Colombia CPO-13">
+<title>Visor de Pruebas - CPO-13</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f1923; color: #e0e8f0; min-height: 100vh; }
+
+  .header {
+    background: linear-gradient(135deg, #1a2940 0%, #0d2137 100%);
+    border-bottom: 2px solid #00aaff33;
+    padding: 18px 32px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .header-logo { font-size: 2rem; }
+  .header h1 { font-size: 1.4rem; font-weight: 700; color: #00c8ff; letter-spacing: 1px; }
+  .header p { font-size: 0.82rem; color: #7a9ab5; margin-top: 2px; }
+  .header-date { margin-left: auto; font-size: 0.8rem; color: #5a7a95; text-align: right; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px 20px; }
+
+  .card {
+    background: #132030;
+    border: 1px solid #1e3550;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-size: 0.88rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1px; color: #00aaff; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .controls-grid { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 14px; align-items: end; }
+
+  label { display: block; font-size: 0.78rem; color: #8aaccc; margin-bottom: 5px; font-weight: 600; letter-spacing: 0.5px; }
+  select, input[type="text"], input[type="date"], input[type="number"] {
+    width: 100%;
+    background: #0c1825;
+    border: 1px solid #1e3a55;
+    border-radius: 8px;
+    color: #d0e8ff;
+    padding: 9px 12px;
+    font-size: 0.88rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  select:focus, input:focus { border-color: #00aaff; }
+
+  .btn {
+    padding: 9px 18px; border-radius: 8px; border: none;
+    font-size: 0.82rem; font-weight: 700; cursor: pointer;
+    letter-spacing: 0.5px; transition: all 0.2s; white-space: nowrap;
+  }
+  .btn-primary { background: #00aaff; color: #001830; }
+  .btn-primary:hover { background: #33bbff; }
+  .btn-danger { background: #ff4455; color: #fff; }
+  .btn-danger:hover { background: #ff6677; }
+  .btn-success { background: #00cc88; color: #001820; }
+  .btn-success:hover { background: #00ffaa; }
+  .btn-outline { background: transparent; color: #00aaff; border: 1px solid #00aaff; }
+  .btn-outline:hover { background: #00aaff22; }
+
+  /* Well selector */
+  .well-selector-wrap { display: flex; gap: 10px; align-items: center; }
+  .well-selector-wrap select { flex: 1; font-size: 1rem; padding: 11px 14px; }
+  .well-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 20px;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.5px;
+  }
+  .badge-pendare { background: #1a3a5c; color: #4db8ff; }
+  .badge-maute { background: #2a1a3c; color: #b87bff; }
+  .badge-pluma { background: #1a3a28; color: #4dffaa; }
+
+  /* Data table */
+  .data-table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+  th {
+    background: #0a1a2d; color: #5599cc; font-weight: 700;
+    padding: 10px 12px; text-align: left;
+    border-bottom: 2px solid #1e3a55;
+    white-space: nowrap; font-size: 0.75rem; letter-spacing: 0.3px;
+  }
+  td { padding: 9px 12px; border-bottom: 1px solid #0d2035; color: #c5ddf5; }
+  tr:hover td { background: #172840; }
+  tr.selected td { background: #0d2a40; color: #fff; }
+
+  .val-highlight { font-weight: 700; color: #00c8ff; }
+  .diff-pos { color: #00ff88; font-weight: 700; }
+  .diff-neg { color: #ff4444; font-weight: 700; }
+  .diff-zero { color: #666; }
+
+  /* Stats bar */
+  .stats-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  .stat-chip {
+    background: #0c1e30; border: 1px solid #1e3a55; border-radius: 8px;
+    padding: 8px 16px; font-size: 0.8rem;
+  }
+  .stat-chip .val { font-size: 1.1rem; font-weight: 700; color: #00c8ff; display: block; }
+  .stat-chip .lbl { color: #5a7a95; font-size: 0.7rem; }
+
+  /* New test section */
+  .new-test-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .input-field-wrap { position: relative; }
+  .input-field-wrap .unit {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    font-size: 0.7rem; color: #4a7a9a; pointer-events: none;
+  }
+
+  /* Comparison table */
+  .comparison-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .comparison-table th { background: #0a1825; color: #4499bb; padding: 9px 14px; border-bottom: 2px solid #1e3a55; font-size: 0.75rem; }
+  .comparison-table td { padding: 10px 14px; border-bottom: 1px solid #0d2035; }
+  .comparison-table tr:nth-child(even) td { background: #0c1a2a; }
+  .var-name { color: #88b8d8; font-weight: 600; }
+  .val-actual { color: #c5ddf5; font-size: 0.9rem; }
+  .val-nueva { color: #00ccff; font-size: 0.9rem; font-weight: 700; }
+
+  /* Upload section */
+  .upload-zone {
+    border: 2px dashed #1e3a55; border-radius: 12px; padding: 28px;
+    text-align: center; cursor: pointer; transition: all 0.2s;
+    background: #0a1825;
+  }
+  .upload-zone:hover { border-color: #00aaff; background: #0d2035; }
+  .upload-zone.dragover { border-color: #00ff88; background: #0d2030; }
+  .upload-zone p { color: #5a7a95; font-size: 0.88rem; margin-top: 8px; }
+  .upload-icon { font-size: 2.5rem; }
+  input[type="file"] { display: none; }
+
+  /* Filter tags */
+  .filter-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #0f2540; border: 1px solid #00aaff44; border-radius: 20px;
+    padding: 3px 12px; font-size: 0.75rem; color: #88c4ee; margin: 3px;
+    cursor: pointer;
+  }
+  .filter-tag.active { background: #00aaff22; border-color: #00aaff; color: #00c8ff; font-weight: 700; }
+  .filter-tag:hover { background: #00aaff11; }
+
+  /* Layout */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } .controls-grid { grid-template-columns: 1fr; } }
+
+  .empty-state { text-align: center; padding: 40px; color: #3a5a7a; font-size: 0.9rem; }
+
+  .notice { background: #0a2035; border: 1px solid #00aaff33; border-radius: 8px; padding: 10px 16px; font-size: 0.8rem; color: #6aaccc; margin-bottom: 14px; }
+
+  /* Scroll */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #0a1825; }
+  ::-webkit-scrollbar-thumb { background: #1e3a55; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #2e5a88; }
+
+  /* Mobile adjustments */
+  @media (max-width: 600px) {
+    .header { padding: 12px 14px; gap: 10px; }
+    .header h1 { font-size: 1rem; }
+    .header p { display: none; }
+    .header-date { display: none; }
+    .container { padding: 12px 10px; }
+    .card { padding: 14px 12px; }
+    .tab-btn { padding: 7px 12px; font-size: 0.75rem; }
+    .stats-row { gap: 8px; }
+    .stat-chip { padding: 6px 10px; }
+    .stat-chip .val { font-size: 0.95rem; }
+    th, td { padding: 7px 8px; font-size: 0.78rem; }
+    .well-badge { font-size: 0.65rem; padding: 2px 7px; }
+    .new-test-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .controls-grid { grid-template-columns: 1fr; }
+    body { padding-bottom: env(safe-area-inset-bottom); }
+  }
+
+  .tab-nav { display: flex; gap: 4px; margin-bottom: 20px; }
+  .tab-btn {
+    padding: 8px 20px; border-radius: 8px 8px 0 0; border: none; cursor: pointer;
+    font-size: 0.82rem; font-weight: 600; letter-spacing: 0.3px; transition: all 0.2s;
+    background: #0c1825; color: #5a7a95; border: 1px solid #1e3550; border-bottom: none;
+  }
+  .tab-btn.active { background: #132030; color: #00c8ff; border-color: #00aaff44; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">🛢️</div>
+  <div>
+    <h1>VISOR DE PRUEBAS — CPO-13</h1>
+    <p>Área Operativa Colombia · Ensayo de Pozos Productores</p>
+  </div>
+  <div class="header-date" id="headerDate"></div>
+  <button id="installBtn" onclick="installApp()" class="btn btn-primary"
+    style="display:none; align-items:center; gap:6px; padding:8px 14px; font-size:0.8rem; margin-left:8px;">
+    📲 Instalar App
+  </button>
+</div>
+
+<div class="container">
+
+  <!-- Tab navigation -->
+  <div class="tab-nav">
+    <button class="tab-btn active" onclick="switchTab('tab-tabla')">📊 Tabla de Pozos</button>
+    <button class="tab-btn" onclick="switchTab('tab-comparacion')">🔬 Comparación de Prueba</button>
+    <button class="tab-btn" onclick="switchTab('tab-actualizar')">📂 Actualizar Archivo</button>
+  </div>
+
+  <!-- TAB 1: Tabla de Pozos -->
+  <div id="tab-tabla" class="tab-content active">
+
+    <div class="card">
+      <div class="card-title">🔍 Filtros</div>
+      <div class="controls-grid">
+        <div>
+          <label>Buscar Pozo</label>
+          <input type="text" id="searchInput" placeholder="Ej: PENDARE-23H..." oninput="applyFilters()">
+        </div>
+        <div>
+          <label>Campo / Área</label>
+          <select id="areaFilter" onchange="applyFilters()">
+            <option value="">Todos los campos</option>
+            <option value="PENDARE NORTE">PENDARE NORTE</option>
+            <option value="PENDARE">PENDARE</option>
+            <option value="MAUTE">MAUTE</option>
+            <option value="LA PLUMA">LA PLUMA</option>
+          </select>
+        </div>
+        <div>
+          <label>Ordenar por</label>
+          <select id="sortBy" onchange="applyFilters()">
+            <option value="pozo">Nombre del Pozo</option>
+            <option value="neta_desc">Neta (mayor a menor)</option>
+            <option value="neta_asc">Neta (menor a mayor)</option>
+            <option value="bruto_desc">Bruto (mayor a menor)</option>
+            <option value="agua_desc">% Agua (mayor a menor)</option>
+            <option value="fecha_desc">Fecha (más reciente)</option>
+            <option value="fecha_asc">Fecha (más antigua)</option>
+          </select>
+        </div>
+        <div>
+          <button class="btn btn-outline" onclick="resetFilters()">↺ Limpiar</button>
+        </div>
+      </div>
+      <div style="margin-top: 12px;">
+        <span class="filter-tag active" data-agua="todos" onclick="setAguaFilter(this,'todos')">Todos</span>
+        <span class="filter-tag" data-agua="bajo" onclick="setAguaFilter(this,'bajo')">💧 Agua &lt; 80%</span>
+        <span class="filter-tag" data-agua="medio" onclick="setAguaFilter(this,'medio')">💧 Agua 80-95%</span>
+        <span class="filter-tag" data-agua="alto" onclick="setAguaFilter(this,'alto')">💧 Agua &gt; 95%</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📋 Ensayo de Pozos Productores</div>
+      <div class="stats-row" id="statsRow"></div>
+      <div class="data-table-wrap">
+        <table id="mainTable">
+          <thead>
+            <tr>
+              <th>Pozo</th>
+              <th>WHP (Psig)</th>
+              <th>Q Bruto (bbl/d)</th>
+              <th>Agua (%)</th>
+              <th>Q Neta (bbl/d)</th>
+              <th>Frecuencia (Hz)</th>
+              <th>Pip (Psig)</th>
+              <th>Cloruros (ppm)</th>
+              <th>pH</th>
+              <th>CHP (psi)</th>
+              <th>Fecha Ensayo</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="mainTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 2: Comparacion -->
+  <div id="tab-comparacion" class="tab-content">
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">🔎 Seleccionar Pozo</div>
+        <div class="well-selector-wrap">
+          <select id="wellSelect" onchange="loadWellData()">
+            <option value="">-- Seleccione un pozo --</option>
+          </select>
+        </div>
+        <div id="currentWellInfo" style="margin-top: 16px;"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">✏️ Valores Nueva Prueba</div>
+        <div class="notice">Ingrese los datos del nuevo ensayo para ver la diferencia respecto al anterior.</div>
+        <div class="new-test-grid" id="newTestInputs">
+          <div class="empty-state">Seleccione un pozo primero</div>
+        </div>
+        <div style="display:flex; gap: 10px; margin-top: 4px;">
+          <button class="btn btn-success" onclick="calcDiff()">⚡ Calcular Diferencia</button>
+          <button class="btn btn-outline" onclick="clearNewTest()">🗑 Limpiar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="diffCard" style="display:none;">
+      <div class="card-title">📊 Comparación de Resultados</div>
+      <table class="comparison-table" id="diffTable">
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Unidad</th>
+            <th>Valor Actual</th>
+            <th>Nueva Prueba</th>
+            <th>Diferencia</th>
+            <th>Variación (%)</th>
+          </tr>
+        </thead>
+        <tbody id="diffTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TAB 3: Actualizar -->
+  <div id="tab-actualizar" class="tab-content">
+    <div class="card">
+      <div class="card-title">📂 Cargar Archivo CPO-13</div>
+      <div class="notice">Cargue un nuevo archivo Excel CPO-13 para actualizar los datos de pruebas. El sistema leerá automáticamente la hoja "CPO13" y la sección de Ensayo de Pozos Productores.</div>
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()"
+           ondragover="event.preventDefault(); this.classList.add('dragover')"
+           ondragleave="this.classList.remove('dragover')"
+           ondrop="handleDrop(event)">
+        <div class="upload-icon">📁</div>
+        <div style="font-size: 1rem; font-weight: 700; color: #4499bb; margin-top: 8px;">Haga clic o arrastre el archivo aquí</div>
+        <p>Formatos aceptados: .xlsx, .xls<br>El archivo debe contener la hoja "CPO13"</p>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="handleFileUpload(event)">
+      <div id="uploadStatus" style="margin-top: 14px;"></div>
+    </div>
+
+    <div class="card" id="uploadPreview" style="display:none;">
+      <div class="card-title">✅ Vista Previa de Datos Cargados</div>
+      <div id="uploadPreviewContent"></div>
+      <div style="margin-top: 16px; display: flex; gap: 10px;">
+        <button class="btn btn-success" onclick="confirmUpdate()">✅ Confirmar Actualización</button>
+        <button class="btn btn-danger" onclick="cancelUpdate()">✗ Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────────────────────────
+const ORIGINAL_DATA = [{"pozo":"PENDARE NORTE-1H","whp":220.0,"bruto":3168.0,"agua_pct":97.3,"neta":85.54,"frecuencia":55.0,"pip":555.3,"cloruros":276.0,"ph":8.0,"chp":124.0,"fecha":"2026-04-16"},{"pozo":"PENDARE NORTE-2H","whp":160.0,"bruto":19.4,"agua_pct":54.02,"neta":8.92,"frecuencia":50.4,"pip":162.0,"cloruros":320.0,"ph":8.0,"chp":100.0,"fecha":"2026-05-15"},{"pozo":"PENDARE NORTE-3H","whp":180.0,"bruto":955.0,"agua_pct":90.77,"neta":88.15,"frecuencia":77.0,"pip":294.0,"cloruros":351.0,"ph":8.0,"chp":0,"fecha":"2026-05-11"},{"pozo":"PENDARE NORTE-4H","whp":176.0,"bruto":2308.0,"agua_pct":95.25,"neta":109.63,"frecuencia":55.5,"pip":182.0,"cloruros":327.0,"ph":7.0,"chp":135.0,"fecha":"2026-05-10"},{"pozo":"PENDARE NORTE-6H","whp":210.0,"bruto":302.0,"agua_pct":60.42,"neta":119.53,"frecuencia":35.3,"pip":1070.0,"cloruros":383.0,"ph":8.0,"chp":0,"fecha":"2026-05-14"},{"pozo":"PENDARE NORTE-7H","whp":360.0,"bruto":8048.0,"agua_pct":97.2,"neta":225.34,"frecuencia":63.0,"pip":793.0,"cloruros":343.0,"ph":8.0,"chp":0,"fecha":"2026-05-17"},{"pozo":"PENDARE NORTE-8H","whp":200.0,"bruto":3585.0,"agua_pct":95.45,"neta":163.12,"frecuencia":65.0,"pip":701.0,"cloruros":355.0,"ph":7.0,"chp":0,"fecha":"2026-05-13"},{"pozo":"PENDARE NORTE-9H","whp":155.0,"bruto":1020.0,"agua_pct":88.0,"neta":122.4,"frecuencia":52.5,"pip":160.0,"cloruros":312.0,"ph":8.0,"chp":148.0,"fecha":"2026-05-17"},{"pozo":"PENDARE NORTE-10H","whp":170.0,"bruto":242.6,"agua_pct":75.1,"neta":60.41,"frecuencia":48.5,"pip":161.0,"cloruros":301.0,"ph":7.0,"chp":110.0,"fecha":"2026-05-17"},{"pozo":"PENDARE NORTE-11H","whp":170.0,"bruto":7482.0,"agua_pct":97.4,"neta":194.53,"frecuencia":67.0,"pip":360.0,"cloruros":326.0,"ph":7.0,"chp":0,"fecha":"2026-05-10"},{"pozo":"PENDARE NORTE-12H","whp":225.0,"bruto":5181.0,"agua_pct":96.54,"neta":179.26,"frecuencia":52.0,"pip":820.0,"cloruros":343.0,"ph":8.0,"chp":0,"fecha":"2026-05-11"},{"pozo":"PENDARE NORTE-13H","whp":175.0,"bruto":1453.2,"agua_pct":89.28,"neta":155.78,"frecuencia":54.0,"pip":167.0,"cloruros":322.0,"ph":8.0,"chp":124.0,"fecha":"2026-05-15"},{"pozo":"PENDARE NORTE-14H","whp":180.0,"bruto":1372.0,"agua_pct":96.84,"neta":43.36,"frecuencia":67.0,"pip":371.0,"cloruros":354.0,"ph":8.0,"chp":48.0,"fecha":"2026-05-12"},{"pozo":"PENDARE NORTE-15H","whp":176.0,"bruto":3448.0,"agua_pct":94.74,"neta":181.36,"frecuencia":67.0,"pip":210.0,"cloruros":358.0,"ph":7.0,"chp":0,"fecha":"2026-05-13"},{"pozo":"PENDARE NORTE-16H","whp":206.0,"bruto":6861.2,"agua_pct":97.35,"neta":181.82,"frecuencia":57.0,"pip":739.0,"cloruros":350.0,"ph":8.0,"chp":40.0,"fecha":"2026-05-14"},{"pozo":"PENDARE NORTE-17H","whp":212.0,"bruto":6477.0,"agua_pct":97.01,"neta":193.66,"frecuencia":52.0,"pip":1000.0,"cloruros":343.0,"ph":8.0,"chp":0,"fecha":"2026-05-11"},{"pozo":"PENDARE NORTE-20H","whp":210.0,"bruto":7343.0,"agua_pct":96.0,"neta":293.72,"frecuencia":62.0,"pip":495.0,"cloruros":319.0,"ph":9.0,"chp":76.0,"fecha":"2026-05-13"},{"pozo":"PENDARE NORTE-21H","whp":190.0,"bruto":1386.0,"agua_pct":94.2,"neta":80.39,"frecuencia":67.0,"pip":183.0,"cloruros":350.0,"ph":8.0,"chp":0,"fecha":"2026-05-17"},{"pozo":"PENDARE NORTE-23H","whp":200.0,"bruto":6327.0,"agua_pct":97.29,"neta":171.46,"frecuencia":65.5,"pip":192.0,"cloruros":283.0,"ph":8.0,"chp":64.0,"fecha":"2026-05-11"},{"pozo":"PENDARE NORTE-26H","whp":238.0,"bruto":1040.0,"agua_pct":99.66,"neta":3.54,"frecuencia":35.5,"pip":1050.0,"cloruros":322.0,"ph":7.6,"chp":0,"fecha":"2025-12-29"},{"pozo":"PENDARE NORTE-28H","whp":165.0,"bruto":213.0,"agua_pct":76.7,"neta":49.63,"frecuencia":50.8,"pip":160.0,"cloruros":304.0,"ph":8.0,"chp":40.0,"fecha":"2026-05-13"},{"pozo":"PENDARE NORTE-30H","whp":230.0,"bruto":6556.3,"agua_pct":98.18,"neta":119.32,"frecuencia":56.0,"pip":648.0,"cloruros":393.0,"ph":7.0,"chp":0,"fecha":"2026-03-16"},{"pozo":"PENDARE NORTE-31H","whp":180.0,"bruto":858.11,"agua_pct":91.84,"neta":70.02,"frecuencia":64.5,"pip":181.0,"cloruros":297.0,"ph":8.0,"chp":0,"fecha":"2026-05-08"},{"pozo":"PENDARE NORTE-32H","whp":310.0,"bruto":4744.4,"agua_pct":98.41,"neta":75.44,"frecuencia":46.5,"pip":935.8,"cloruros":375.0,"ph":7.5,"chp":75.0,"fecha":"2026-01-14"},{"pozo":"PENDARE NORTE-33H","whp":200.0,"bruto":589.6,"agua_pct":90.7,"neta":54.83,"frecuencia":56.5,"pip":161.0,"cloruros":638.0,"ph":7.0,"chp":52.0,"fecha":"2026-05-17"},{"pozo":"PENDARE NORTE-34H","whp":480.0,"bruto":262.4,"agua_pct":67.61,"neta":84.99,"frecuencia":43.0,"pip":224.0,"cloruros":355.0,"ph":7.0,"chp":20.0,"fecha":"2026-05-17"},{"pozo":"PENDARE NORTE-35H","whp":180.0,"bruto":466.4,"agua_pct":76.2,"neta":111.0,"frecuencia":55.0,"pip":161.5,"cloruros":345.0,"ph":7.0,"chp":0,"fecha":"2026-05-15"},{"pozo":"PENDARE NORTE-36H","whp":176.0,"bruto":232.0,"agua_pct":58.89,"neta":95.38,"frecuencia":55.5,"pip":160.0,"cloruros":287.0,"ph":8.0,"chp":44.0,"fecha":"2026-05-16"},{"pozo":"PENDARE-1 (Productor)","whp":92.0,"bruto":590.0,"agua_pct":100.0,"neta":0,"frecuencia":47.25,"pip":560.0,"cloruros":294.0,"ph":8.28,"chp":0,"fecha":"2022-05-03"},{"pozo":"PENDARE-1H","whp":140.0,"bruto":2001.2,"agua_pct":94.93,"neta":101.46,"frecuencia":54.0,"pip":191.0,"cloruros":369.0,"ph":8.0,"chp":50.0,"fecha":"2026-05-13"},{"pozo":"PENDARE-2","whp":136.0,"bruto":669.2,"agua_pct":98.49,"neta":10.1,"frecuencia":30.0,"pip":0,"cloruros":304.0,"ph":8.0,"chp":0,"fecha":"2026-05-11"},{"pozo":"PENDARE-3H","whp":156.0,"bruto":3770.4,"agua_pct":95.61,"neta":165.52,"frecuencia":35.5,"pip":1072.1,"cloruros":340.0,"ph":8.0,"chp":0,"fecha":"2026-05-17"},{"pozo":"PENDARE-5H","whp":150.0,"bruto":6293.1,"agua_pct":99.15,"neta":53.49,"frecuencia":50.0,"pip":907.8,"cloruros":262.0,"ph":8.0,"chp":0,"fecha":"2026-05-17"},{"pozo":"PENDARE-6","whp":8.0,"bruto":1177.26,"agua_pct":98.08,"neta":22.63,"frecuencia":30.0,"pip":1144.0,"cloruros":341.9,"ph":7.0,"chp":0,"fecha":"2023-02-23"},{"pozo":"PENDARE-7H","whp":138.0,"bruto":711.78,"agua_pct":89.94,"neta":71.61,"frecuencia":57.5,"pip":165.0,"cloruros":262.0,"ph":8.0,"chp":144.0,"fecha":"2026-05-09"},{"pozo":"PENDARE-8H","whp":146.0,"bruto":915.9,"agua_pct":96.45,"neta":32.51,"frecuencia":44.5,"pip":160.0,"cloruros":312.0,"ph":8.0,"chp":112.0,"fecha":"2026-05-15"},{"pozo":"PENDARE-9H","whp":142.0,"bruto":2447.0,"agua_pct":95.7,"neta":105.22,"frecuencia":65.8,"pip":162.0,"cloruros":308.0,"ph":9.0,"chp":0,"fecha":"2026-05-11"},{"pozo":"PENDARE-11H","whp":198.0,"bruto":5546.0,"agua_pct":99.54,"neta":25.51,"frecuencia":55.0,"pip":572.0,"cloruros":318.0,"ph":7.0,"chp":20.0,"fecha":"2026-05-11"},{"pozo":"PENDARE-12H","whp":124.0,"bruto":732.3,"agua_pct":84.69,"neta":112.12,"frecuencia":57.0,"pip":182.7,"cloruros":308.0,"ph":8.0,"chp":22.0,"fecha":"2026-05-16"},{"pozo":"PENDARE-13H","whp":132.0,"bruto":1196.8,"agua_pct":89.8,"neta":122.07,"frecuencia":62.5,"pip":174.0,"cloruros":319.0,"ph":8.0,"chp":100.0,"fecha":"2026-05-07"},{"pozo":"PENDARE-14H","whp":160.0,"bruto":665.1,"agua_pct":93.03,"neta":46.36,"frecuencia":59.0,"pip":160.0,"cloruros":304.0,"ph":8.0,"chp":80.0,"fecha":"2026-05-11"},{"pozo":"PENDARE-15H","whp":120.0,"bruto":628.9,"agua_pct":91.73,"neta":52.01,"frecuencia":42.0,"pip":179.8,"cloruros":340.0,"ph":8.0,"chp":0,"fecha":"2026-05-10"},{"pozo":"PENDARE-16H","whp":134.0,"bruto":467.81,"agua_pct":95.27,"neta":22.13,"frecuencia":52.0,"pip":160.0,"cloruros":235.0,"ph":8.0,"chp":100.0,"fecha":"2026-05-09"},{"pozo":"PENDARE-17H","whp":152.0,"bruto":2036.4,"agua_pct":97.4,"neta":52.95,"frecuencia":54.4,"pip":162.0,"cloruros":312.0,"ph":7.0,"chp":122.0,"fecha":"2026-05-12"},{"pozo":"PENDARE-18H","whp":88.0,"bruto":1925.0,"agua_pct":98.56,"neta":27.72,"frecuencia":40.0,"pip":855.5,"cloruros":315.0,"ph":8.0,"chp":0,"fecha":"2022-02-16"},{"pozo":"PENDARE-19H","whp":370.0,"bruto":1640.0,"agua_pct":96.2,"neta":62.32,"frecuencia":70.0,"pip":273.0,"cloruros":308.0,"ph":8.0,"chp":96.0,"fecha":"2026-05-11"},{"pozo":"PENDARE-20H","whp":110.0,"bruto":2329.0,"agua_pct":96.98,"neta":70.34,"frecuencia":67.0,"pip":191.0,"cloruros":329.0,"ph":7.0,"chp":0,"fecha":"2026-05-14"},{"pozo":"PENDARE-21H","whp":142.0,"bruto":2623.0,"agua_pct":94.42,"neta":146.36,"frecuencia":67.0,"pip":224.0,"cloruros":304.0,"ph":7.0,"chp":18.0,"fecha":"2026-05-12"},{"pozo":"PENDARE-22H","whp":148.0,"bruto":2764.7,"agua_pct":95.05,"neta":136.85,"frecuencia":61.0,"pip":161.0,"cloruros":295.0,"ph":8.0,"chp":0,"fecha":"2026-05-12"},{"pozo":"PENDARE-23H","whp":145.0,"bruto":3078.8,"agua_pct":92.58,"neta":228.45,"frecuencia":67.0,"pip":211.0,"cloruros":324.0,"ph":8.0,"chp":12.0,"fecha":"2026-05-14"},{"pozo":"PENDARE-24H","whp":130.0,"bruto":1508.6,"agua_pct":93.8,"neta":93.53,"frecuencia":73.5,"pip":173.0,"cloruros":340.0,"ph":7.0,"chp":0,"fecha":"2026-05-13"},{"pozo":"PENDARE-25H","whp":140.0,"bruto":918.0,"agua_pct":86.99,"neta":119.43,"frecuencia":54.0,"pip":165.0,"cloruros":329.0,"ph":7.0,"chp":116.0,"fecha":"2026-05-14"},{"pozo":"PENDARE-26H","whp":132.0,"bruto":2767.8,"agua_pct":97.54,"neta":68.09,"frecuencia":67.0,"pip":207.4,"cloruros":343.0,"ph":8.0,"chp":0,"fecha":"2026-05-16"},{"pozo":"PENDARE-27H","whp":128.0,"bruto":1542.8,"agua_pct":95.18,"neta":74.36,"frecuencia":53.0,"pip":165.0,"cloruros":315.0,"ph":8.0,"chp":0,"fecha":"2026-05-07"},{"pozo":"PENDARE-28H","whp":145.0,"bruto":2107.6,"agua_pct":95.54,"neta":94.0,"frecuencia":95.5,"pip":249.0,"cloruros":326.0,"ph":9.0,"chp":38.0,"fecha":"2026-05-13"},{"pozo":"PENDARE-29H","whp":140.0,"bruto":2049.6,"agua_pct":92.35,"neta":156.79,"frecuencia":66.0,"pip":165.2,"cloruros":248.0,"ph":8.0,"chp":104.0,"fecha":"2026-05-17"},{"pozo":"PENDARE-30H ST","whp":122.0,"bruto":1558.0,"agua_pct":94.64,"neta":83.51,"frecuencia":55.8,"pip":161.0,"cloruros":333.0,"ph":8.0,"chp":140.0,"fecha":"2026-05-15"},{"pozo":"PENDARE-31H","whp":130.0,"bruto":1163.2,"agua_pct":94.88,"neta":59.56,"frecuencia":53.5,"pip":166.0,"cloruros":320.0,"ph":8.0,"chp":140.0,"fecha":"2026-05-04"},{"pozo":"PENDARE-32H","whp":120.0,"bruto":1224.8,"agua_pct":94.29,"neta":69.94,"frecuencia":61.0,"pip":160.0,"cloruros":207.0,"ph":8.0,"chp":0,"fecha":"2026-05-09"},{"pozo":"PENDARE-33H","whp":148.0,"bruto":1853.2,"agua_pct":91.1,"neta":164.93,"frecuencia":58.0,"pip":160.0,"cloruros":367.0,"ph":8.0,"chp":140.0,"fecha":"2026-05-15"},{"pozo":"PENDARE-34H","whp":120.0,"bruto":2404.4,"agua_pct":97.62,"neta":57.22,"frecuencia":30.0,"pip":957.0,"cloruros":323.0,"ph":8.0,"chp":18.0,"fecha":"2026-05-14"},{"pozo":"PENDARE-35H","whp":154.0,"bruto":1050.4,"agua_pct":95.07,"neta":51.78,"frecuencia":62.0,"pip":183.0,"cloruros":311.0,"ph":7.0,"chp":0,"fecha":"2026-05-14"},{"pozo":"PENDARE-36H","whp":164.0,"bruto":2820.0,"agua_pct":96.92,"neta":86.86,"frecuencia":67.0,"pip":565.0,"cloruros":283.0,"ph":8.0,"chp":40.0,"fecha":"2026-05-10"},{"pozo":"PENDARE-37H","whp":135.0,"bruto":2301.2,"agua_pct":94.87,"neta":118.05,"frecuencia":67.0,"pip":433.0,"cloruros":276.0,"ph":9.0,"chp":40.0,"fecha":"2026-05-13"},{"pozo":"PENDARE-38H","whp":116.0,"bruto":2903.9,"agua_pct":98.1,"neta":55.17,"frecuencia":62.0,"pip":349.0,"cloruros":332.0,"ph":8.0,"chp":22.0,"fecha":"2026-05-15"},{"pozo":"PENDARE-40H","whp":294.0,"bruto":3490.0,"agua_pct":98.32,"neta":58.63,"frecuencia":40.0,"pip":509.8,"cloruros":367.0,"ph":8.0,"chp":40.0,"fecha":"2026-05-17"},{"pozo":"PENDARE-41H","whp":140.0,"bruto":1069.5,"agua_pct":91.31,"neta":92.94,"frecuencia":52.5,"pip":163.0,"cloruros":332.0,"ph":7.0,"chp":20.0,"fecha":"2026-05-11"},{"pozo":"PENDARE-42H","whp":144.0,"bruto":1986.8,"agua_pct":94.71,"neta":105.1,"frecuencia":60.0,"pip":160.0,"cloruros":367.0,"ph":8.0,"chp":24.0,"fecha":"2026-05-13"},{"pozo":"PENDARE-43H","whp":154.0,"bruto":1644.8,"agua_pct":94.32,"neta":93.42,"frecuencia":53.0,"pip":160.0,"cloruros":360.0,"ph":8.0,"chp":112.0,"fecha":"2026-05-17"},{"pozo":"PENDARE-44H","whp":145.0,"bruto":1278.4,"agua_pct":97.64,"neta":30.17,"frecuencia":51.0,"pip":175.0,"cloruros":332.0,"ph":7.0,"chp":28.0,"fecha":"2026-05-13"},{"pozo":"PENDARE-45H","whp":120.0,"bruto":664.4,"agua_pct":90.37,"neta":63.98,"frecuencia":51.0,"pip":184.0,"cloruros":389.0,"ph":8.0,"chp":0,"fecha":"2026-05-05"},{"pozo":"PENDARE-46H","whp":154.0,"bruto":1428.4,"agua_pct":94.5,"neta":78.56,"frecuencia":53.0,"pip":160.0,"cloruros":340.0,"ph":8.0,"chp":24.0,"fecha":"2026-05-14"},{"pozo":"PENDARE-47H","whp":170.0,"bruto":2758.6,"agua_pct":98.74,"neta":34.76,"frecuencia":51.5,"pip":960.0,"cloruros":382.0,"ph":8.0,"chp":60.0,"fecha":"2026-04-28"},{"pozo":"PENDARE-48H","whp":160.0,"bruto":2742.0,"agua_pct":96.9,"neta":85.0,"frecuencia":67.0,"pip":350.0,"cloruros":407.0,"ph":8.0,"chp":0,"fecha":"2026-05-07"},{"pozo":"PENDARE-50H","whp":114.0,"bruto":3360.8,"agua_pct":94.12,"neta":197.62,"frecuencia":67.0,"pip":329.0,"cloruros":326.0,"ph":8.0,"chp":0,"fecha":"2026-05-16"},{"pozo":"PENDARE-51H","whp":134.0,"bruto":4126.4,"agua_pct":94.41,"neta":230.67,"frecuencia":60.0,"pip":185.6,"cloruros":336.0,"ph":8.0,"chp":0,"fecha":"2026-05-16"},{"pozo":"PENDARE-52H","whp":126.0,"bruto":1516.4,"agua_pct":89.38,"neta":161.04,"frecuencia":52.0,"pip":182.7,"cloruros":326.0,"ph":8.0,"chp":20.0,"fecha":"2026-05-17"},{"pozo":"PENDARE-55H","whp":160.0,"bruto":979.0,"agua_pct":91.07,"neta":87.42,"frecuencia":59.5,"pip":175.0,"cloruros":425.0,"ph":8.0,"chp":20.0,"fecha":"2026-05-07"},{"pozo":"PENDARE-62H","whp":170.0,"bruto":882.8,"agua_pct":90.4,"neta":84.75,"frecuencia":60.5,"pip":181.3,"cloruros":407.0,"ph":8.0,"chp":50.0,"fecha":"2026-05-17"},{"pozo":"PENDARE-66H","whp":160.0,"bruto":1661.0,"agua_pct":90.58,"neta":156.47,"frecuencia":55.0,"pip":165.0,"cloruros":319.0,"ph":8.0,"chp":20.0,"fecha":"2026-05-17"},{"pozo":"PENDARE-ABI-1H","whp":195.0,"bruto":3530.03,"agua_pct":97.93,"neta":73.23,"frecuencia":37.0,"pip":1101.0,"cloruros":346.0,"ph":4.82,"chp":0,"fecha":"2023-03-14"},{"pozo":"MAUTE-1H","whp":150.0,"bruto":1095.0,"agua_pct":88.0,"neta":131.4,"frecuencia":44.2,"pip":645.0,"cloruros":323.0,"ph":7.0,"chp":0,"fecha":"2025-02-04"},{"pozo":"MAUTE-2H","whp":144.0,"bruto":2340.0,"agua_pct":95.4,"neta":107.64,"frecuencia":53.8,"pip":584.0,"cloruros":260.0,"ph":7.0,"chp":0,"fecha":"2024-11-16"},{"pozo":"MAUTE-3H","whp":200.0,"bruto":827.0,"agua_pct":90.26,"neta":80.55,"frecuencia":49.2,"pip":639.0,"cloruros":280.0,"ph":7.0,"chp":0,"fecha":"2024-12-30"},{"pozo":"MAUTE-4H","whp":420.0,"bruto":2879.45,"agua_pct":100.0,"neta":0,"frecuencia":60.0,"pip":967.0,"cloruros":479.0,"ph":7.0,"chp":0,"fecha":"2024-08-27"},{"pozo":"MAUTE-6H","whp":300.0,"bruto":2874.0,"agua_pct":96.0,"neta":114.96,"frecuencia":81.0,"pip":646.0,"cloruros":310.0,"ph":7.0,"chp":0,"fecha":"2025-01-08"},{"pozo":"MAUTE-9H","whp":450.0,"bruto":7336.02,"agua_pct":98.93,"neta":78.56,"frecuencia":61.0,"pip":657.0,"cloruros":220.0,"ph":8.0,"chp":0,"fecha":"2025-02-12"},{"pozo":"LA PLUMA-2H","whp":85.0,"bruto":460.77,"agua_pct":78.54,"neta":98.87,"frecuencia":30.0,"pip":929.0,"cloruros":229.0,"ph":7.0,"chp":0,"fecha":"2026-05-17"},{"pozo":"LA PLUMA-3H","whp":24.0,"bruto":213.82,"agua_pct":54.16,"neta":98.01,"frecuencia":32.0,"pip":802.0,"cloruros":244.0,"ph":7.0,"chp":0,"fecha":"2026-05-17"}];
+
+const FIELDS = [
+  { key: 'whp',       label: 'WHP',        unit: 'Psig',   step: 1 },
+  { key: 'bruto',     label: 'Q Bruto',    unit: 'bbl/d',  step: 0.1 },
+  { key: 'agua_pct',  label: 'Agua',       unit: '%',      step: 0.01 },
+  { key: 'neta',      label: 'Q Neta',     unit: 'bbl/d',  step: 0.01 },
+  { key: 'frecuencia',label: 'Frecuencia', unit: 'Hz',     step: 0.1 },
+  { key: 'pip',       label: 'Pip',        unit: 'Psig',   step: 0.1 },
+  { key: 'cloruros',  label: 'Cloruros',   unit: 'ppm',    step: 1 },
+  { key: 'ph',        label: 'pH',         unit: '',       step: 0.01 },
+  { key: 'chp',       label: 'CHP',        unit: 'psi',    step: 1 },
+];
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let wellsData = [...ORIGINAL_DATA];
+let filteredData = [...wellsData];
+let aguaFilter = 'todos';
+let pendingUploadData = null;
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('headerDate').innerHTML =
+    `Fecha: <strong>${new Date().toLocaleDateString('es-CO', {day:'2-digit',month:'long',year:'numeric'})}</strong><br>
+     <span style="color:#3a5a7a">CPO-13 · Área Operativa Colombia</span>`;
+
+  populateWellSelect();
+  applyFilters();
+});
+
+function populateWellSelect() {
+  const sel = document.getElementById('wellSelect');
+  sel.innerHTML = '<option value="">-- Seleccione un pozo --</option>';
+  wellsData.slice().sort((a,b) => a.pozo.localeCompare(b.pozo)).forEach(w => {
+    const opt = document.createElement('option');
+    opt.value = w.pozo;
+    opt.textContent = w.pozo;
+    sel.appendChild(opt);
+  });
+}
+
+// ── FILTERS ───────────────────────────────────────────────────────────────────
+function setAguaFilter(el, val) {
+  document.querySelectorAll('.filter-tag').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  aguaFilter = val;
+  applyFilters();
+}
+
+function applyFilters() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const area   = document.getElementById('areaFilter').value;
+  const sort   = document.getElementById('sortBy').value;
+
+  filteredData = wellsData.filter(w => {
+    if (search && !w.pozo.toLowerCase().includes(search)) return false;
+    if (area && !w.pozo.startsWith(area)) return false;
+    if (aguaFilter === 'bajo'  && w.agua_pct >= 80) return false;
+    if (aguaFilter === 'medio' && (w.agua_pct < 80 || w.agua_pct > 95)) return false;
+    if (aguaFilter === 'alto'  && w.agua_pct <= 95) return false;
+    return true;
+  });
+
+  const sortFns = {
+    'pozo':       (a,b) => a.pozo.localeCompare(b.pozo),
+    'neta_desc':  (a,b) => b.neta - a.neta,
+    'neta_asc':   (a,b) => a.neta - b.neta,
+    'bruto_desc': (a,b) => b.bruto - a.bruto,
+    'agua_desc':  (a,b) => b.agua_pct - a.agua_pct,
+    'fecha_desc': (a,b) => b.fecha.localeCompare(a.fecha),
+    'fecha_asc':  (a,b) => a.fecha.localeCompare(b.fecha),
+  };
+  filteredData.sort(sortFns[sort] || sortFns['pozo']);
+
+  renderTable();
+  renderStats();
+}
+
+function resetFilters() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('areaFilter').value = '';
+  document.getElementById('sortBy').value = 'pozo';
+  aguaFilter = 'todos';
+  document.querySelectorAll('.filter-tag').forEach(t => t.classList.remove('active'));
+  document.querySelector('[data-agua="todos"]').classList.add('active');
+  applyFilters();
+}
+
+// ── TABLE ─────────────────────────────────────────────────────────────────────
+function renderTable() {
+  const tbody = document.getElementById('mainTableBody');
+  if (!filteredData.length) {
+    tbody.innerHTML = '<tr><td colspan="12" class="empty-state">No se encontraron pozos con los filtros actuales</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filteredData.map(w => {
+    const badgeClass = w.pozo.startsWith('MAUTE') ? 'badge-maute' :
+                       w.pozo.startsWith('LA PLUMA') ? 'badge-pluma' : 'badge-pendare';
+    const aguaColor = w.agua_pct > 97 ? '#ff4444' : w.agua_pct > 90 ? '#ffaa00' : '#00cc88';
+    return `<tr>
+      <td><span class="well-badge ${badgeClass}">${w.pozo}</span></td>
+      <td class="val-highlight">${fmt(w.whp)}</td>
+      <td>${fmt(w.bruto)}</td>
+      <td style="color:${aguaColor}; font-weight:700">${fmt(w.agua_pct)}%</td>
+      <td class="val-highlight">${fmt(w.neta)}</td>
+      <td>${fmt(w.frecuencia)}</td>
+      <td>${fmt(w.pip)}</td>
+      <td>${fmt(w.cloruros)}</td>
+      <td>${fmt(w.ph)}</td>
+      <td>${w.chp > 0 ? fmt(w.chp) : '<span style="color:#3a5a7a">—</span>'}</td>
+      <td style="color:#5a9abf; font-size:0.8rem">${w.fecha || '—'}</td>
+      <td><button class="btn btn-outline" style="padding:4px 10px; font-size:0.75rem"
+          onclick="goCompare('${w.pozo}')">🔬 Comparar</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderStats() {
+  const total = filteredData.length;
+  const avgNeta = filteredData.reduce((s,w) => s + w.neta, 0) / (total || 1);
+  const avgBruto = filteredData.reduce((s,w) => s + w.bruto, 0) / (total || 1);
+  const avgAgua = filteredData.reduce((s,w) => s + w.agua_pct, 0) / (total || 1);
+  const maxNeta = Math.max(...filteredData.map(w => w.neta));
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat-chip"><span class="val">${total}</span><span class="lbl">Pozos</span></div>
+    <div class="stat-chip"><span class="val">${fmt(avgNeta)} bbl/d</span><span class="lbl">Neta Promedio</span></div>
+    <div class="stat-chip"><span class="val">${fmt(avgBruto)} bbl/d</span><span class="lbl">Bruto Promedio</span></div>
+    <div class="stat-chip"><span class="val">${fmt(avgAgua)}%</span><span class="lbl">% Agua Promedio</span></div>
+    <div class="stat-chip"><span class="val">${fmt(maxNeta)} bbl/d</span><span class="lbl">Neta Máxima</span></div>
+  `;
+}
+
+// ── COMPARISON ────────────────────────────────────────────────────────────────
+function goCompare(pozo) {
+  switchTab('tab-comparacion');
+  document.getElementById('wellSelect').value = pozo;
+  loadWellData();
+}
+
+function loadWellData() {
+  const pozo = document.getElementById('wellSelect').value;
+  if (!pozo) {
+    document.getElementById('currentWellInfo').innerHTML = '';
+    document.getElementById('newTestInputs').innerHTML = '<div class="empty-state">Seleccione un pozo primero</div>';
+    document.getElementById('diffCard').style.display = 'none';
+    return;
+  }
+  const w = wellsData.find(d => d.pozo === pozo);
+  if (!w) return;
+
+  const badgeClass = w.pozo.startsWith('MAUTE') ? 'badge-maute' :
+                     w.pozo.startsWith('LA PLUMA') ? 'badge-pluma' : 'badge-pendare';
+
+  document.getElementById('currentWellInfo').innerHTML = `
+    <div style="border:1px solid #1e3550; border-radius: 8px; overflow:hidden; margin-top:8px;">
+      <div style="background:#0a1825; padding:10px 14px; font-size:0.75rem; color:#5a7a95; text-transform:uppercase; letter-spacing:1px;">
+        Datos del último ensayo · <span style="color:#8abbd4">${w.fecha || 'Sin fecha'}</span>
+      </div>
+      ${FIELDS.map(f => `
+        <div style="display:flex; justify-content:space-between; padding:8px 14px; border-bottom:1px solid #0d2035;">
+          <span style="color:#7a9ab5; font-size:0.82rem;">${f.label}</span>
+          <span style="color:#c5ddf5; font-weight:600;">${fmt(w[f.key])} <span style="color:#3a5a7a; font-size:0.72rem;">${f.unit}</span></span>
+        </div>
+      `).join('')}
+    </div>`;
+
+  document.getElementById('newTestInputs').innerHTML = FIELDS.map(f => `
+    <div class="input-field-wrap">
+      <label>${f.label}${f.unit ? ' ('+f.unit+')' : ''}</label>
+      <input type="number" id="new_${f.key}" step="${f.step}" placeholder="${fmt(w[f.key])}">
+    </div>
+  `).join('');
+
+  document.getElementById('diffCard').style.display = 'none';
+}
+
+function calcDiff() {
+  const pozo = document.getElementById('wellSelect').value;
+  if (!pozo) return;
+  const w = wellsData.find(d => d.pozo === pozo);
+  if (!w) return;
+
+  const tbody = document.getElementById('diffTableBody');
+  tbody.innerHTML = '';
+  let hasAny = false;
+
+  FIELDS.forEach(f => {
+    const inputEl = document.getElementById('new_' + f.key);
+    const raw = inputEl ? inputEl.value : '';
+    const actual = w[f.key];
+    const nueva  = raw !== '' ? parseFloat(raw) : null;
+    const diff   = nueva !== null ? nueva - actual : null;
+    const pct    = (diff !== null && actual !== 0) ? (diff / actual * 100) : null;
+
+    if (raw !== '') hasAny = true;
+
+    const diffStr = diff !== null
+      ? `<span class="${diff > 0 ? 'diff-pos' : diff < 0 ? 'diff-neg' : 'diff-zero'}">${diff > 0 ? '+' : ''}${fmt(diff)}</span>`
+      : '<span style="color:#2a4a6a">—</span>';
+    const pctStr = pct !== null
+      ? `<span class="${pct > 0 ? 'diff-pos' : pct < 0 ? 'diff-neg' : 'diff-zero'}">${pct > 0 ? '+' : ''}${fmt(pct)}%</span>`
+      : '<span style="color:#2a4a6a">—</span>';
+
+    tbody.innerHTML += `<tr>
+      <td class="var-name">${f.label}</td>
+      <td style="color:#3a6a8a; font-size:0.78rem;">${f.unit || '—'}</td>
+      <td class="val-actual">${fmt(actual)}</td>
+      <td class="val-nueva">${nueva !== null ? fmt(nueva) : '<span style="color:#2a4a6a">Sin valor</span>'}</td>
+      <td>${diffStr}</td>
+      <td>${pctStr}</td>
+    </tr>`;
+  });
+
+  document.getElementById('diffCard').style.display = 'block';
+  if (!hasAny) {
+    document.getElementById('diffCard').style.display = 'none';
+    alert('Ingrese al menos un valor en la nueva prueba para comparar.');
+  }
+}
+
+function clearNewTest() {
+  FIELDS.forEach(f => {
+    const el = document.getElementById('new_' + f.key);
+    if (el) el.value = '';
+  });
+  document.getElementById('diffCard').style.display = 'none';
+}
+
+// ── FILE UPLOAD ───────────────────────────────────────────────────────────────
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+}
+
+function handleFileUpload(e) {
+  const file = e.target.files[0];
+  if (file) processFile(file);
+  e.target.value = '';
+}
+
+function processFile(file) {
+  if (!file.name.match(/\.(xlsx|xls)$/i)) {
+    showUploadStatus('❌ Formato no válido. Solo se aceptan archivos .xlsx o .xls', 'error');
+    return;
+  }
+  showUploadStatus('⏳ Leyendo archivo...', 'info');
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array', cellDates: true });
+
+      if (!wb.SheetNames.includes('CPO13')) {
+        showUploadStatus('❌ No se encontró la hoja "CPO13" en el archivo.', 'error');
+        return;
+      }
+
+      const ws = wb.Sheets['CPO13'];
+      const parsed = parseWellTests(ws);
+
+      if (!parsed.length) {
+        showUploadStatus('⚠️ No se encontraron datos de pozos en la sección "ENSAYO DE POZOS PRODUCTORES".', 'error');
+        return;
+      }
+
+      pendingUploadData = parsed;
+      showUploadPreview(parsed, file.name);
+      showUploadStatus(`✅ Archivo leído correctamente. Se encontraron ${parsed.length} pozos.`, 'success');
+    } catch (err) {
+      showUploadStatus('❌ Error al leer el archivo: ' + err.message, 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseWellTests(ws) {
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:Z200');
+  const wells = [];
+
+  // Find header row with "ENSAYO DE POZOS PRODUCTORES"
+  let dataStartRow = -1;
+  for (let r = range.s.r; r <= Math.min(range.e.r, 100); r++) {
+    const cell = ws[XLSX.utils.encode_cell({ r, c: 1 })] || ws[XLSX.utils.encode_cell({ r, c: 0 })];
+    if (cell && String(cell.v).includes('ENSAYO')) {
+      dataStartRow = r + 3; // skip 3 header lines
+      break;
+    }
+  }
+  if (dataStartRow < 0) dataStartRow = 70; // fallback
+
+  for (let r = dataStartRow; r <= Math.min(range.e.r, 200); r++) {
+    const pozoCel = ws[XLSX.utils.encode_cell({ r, c: 1 })];
+    if (!pozoCel || !pozoCel.v || String(pozoCel.v).trim() === '') continue;
+    const pozo = String(pozoCel.v).trim();
+    if (pozo === 'TOTAL' || pozo === 'POZO' || pozo === 'Nº') continue;
+
+    const whp    = getNum(ws, r, 2);
+    const bruto  = getNum(ws, r, 3);
+    const agua   = getNum(ws, r, 4);
+    const neta   = getNum(ws, r, 5);
+    const freq   = getNum(ws, r, 6);
+    const pip    = getNum(ws, r, 7);
+    const clor   = getNum(ws, r, 8);
+    const ph     = getNum(ws, r, 9);
+    const chp    = getNum(ws, r, 10);
+    const obsCel = ws[XLSX.utils.encode_cell({ r, c: 11 })];
+
+    if (whp === null && bruto === null) continue;
+    if (typeof whp !== 'number' || isNaN(whp)) continue;
+
+    let fecha = '';
+    if (obsCel && obsCel.v) {
+      if (obsCel.v instanceof Date) {
+        fecha = obsCel.v.toISOString().split('T')[0];
+      } else if (typeof obsCel.v === 'number') {
+        const d = XLSX.SSF.parse_date_code(obsCel.v);
+        if (d) fecha = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+      } else {
+        fecha = String(obsCel.v);
+      }
+    }
+
+    wells.push({ pozo, whp: whp||0, bruto: bruto||0, agua_pct: agua||0, neta: neta||0,
+                 frecuencia: freq||0, pip: pip||0, cloruros: clor||0, ph: ph||0, chp: chp||0, fecha });
+  }
+  return wells;
+}
+
+function getNum(ws, r, c) {
+  const cell = ws[XLSX.utils.encode_cell({ r, c })];
+  if (!cell) return null;
+  if (typeof cell.v === 'number') return cell.v;
+  const n = parseFloat(String(cell.v).replace(',', '.'));
+  return isNaN(n) ? null : n;
+}
+
+function showUploadPreview(data, fname) {
+  const preview = document.getElementById('uploadPreview');
+  const content = document.getElementById('uploadPreviewContent');
+  preview.style.display = 'block';
+
+  const existing = new Set(wellsData.map(w => w.pozo));
+  const newWells = data.filter(w => !existing.has(w.pozo));
+  const updatedWells = data.filter(w => existing.has(w.pozo));
+
+  content.innerHTML = `
+    <p style="color:#7aaabb; margin-bottom:12px; font-size:0.85rem;">
+      Archivo: <strong style="color:#aaccee">${fname}</strong> &nbsp;·&nbsp;
+      ${updatedWells.length} pozos actualizados &nbsp;·&nbsp;
+      ${newWells.length} pozos nuevos
+    </p>
+    <div class="data-table-wrap" style="max-height:320px; overflow-y:auto;">
+      <table>
+        <thead><tr>
+          <th>Pozo</th><th>WHP</th><th>Q Bruto</th><th>Agua%</th><th>Q Neta</th><th>Frecuencia</th><th>Pip</th><th>Cloruros</th><th>pH</th><th>Fecha</th><th>Estado</th>
+        </tr></thead>
+        <tbody>
+          ${data.map(w => {
+            const isNew = !existing.has(w.pozo);
+            return `<tr>
+              <td>${w.pozo}</td>
+              <td>${fmt(w.whp)}</td><td>${fmt(w.bruto)}</td>
+              <td>${fmt(w.agua_pct)}%</td><td class="val-highlight">${fmt(w.neta)}</td>
+              <td>${fmt(w.frecuencia)}</td><td>${fmt(w.pip)}</td>
+              <td>${fmt(w.cloruros)}</td><td>${fmt(w.ph)}</td>
+              <td style="color:#5a9abf; font-size:0.78rem">${w.fecha||'—'}</td>
+              <td><span style="color:${isNew?'#00cc88':'#00aaff'}; font-size:0.75rem; font-weight:700">${isNew?'NUEVO':'ACT.'}</span></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function confirmUpdate() {
+  if (!pendingUploadData) return;
+  const existing = new Map(wellsData.map(w => [w.pozo, w]));
+  pendingUploadData.forEach(w => existing.set(w.pozo, w));
+  wellsData = [...existing.values()];
+  filteredData = [...wellsData];
+
+  populateWellSelect();
+  applyFilters();
+
+  document.getElementById('uploadPreview').style.display = 'none';
+  showUploadStatus(`✅ Datos actualizados correctamente. ${wellsData.length} pozos en total.`, 'success');
+  pendingUploadData = null;
+
+  setTimeout(() => switchTab('tab-tabla'), 1200);
+}
+
+function cancelUpdate() {
+  pendingUploadData = null;
+  document.getElementById('uploadPreview').style.display = 'none';
+  showUploadStatus('', '');
+}
+
+function showUploadStatus(msg, type) {
+  const el = document.getElementById('uploadStatus');
+  if (!msg) { el.innerHTML = ''; return; }
+  const colors = { error: '#ff4455', success: '#00cc88', info: '#00aaff' };
+  el.innerHTML = `<div style="color:${colors[type]||'#88aabb'}; padding:10px 0; font-size:0.85rem;">${msg}</div>`;
+}
+
+// ── TABS ──────────────────────────────────────────────────────────────────────
+function switchTab(id) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  const idx = ['tab-tabla','tab-comparacion','tab-actualizar'].indexOf(id);
+  document.querySelectorAll('.tab-btn')[idx].classList.add('active');
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────────────────
+function fmt(v) {
+  if (v === null || v === undefined) return '—';
+  if (typeof v === 'number') {
+    return v % 1 === 0 ? v.toLocaleString('es-CO') : v.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  return String(v);
+}
+
+// ── SERVICE WORKER ────────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(() => console.log('SW registrado'))
+      .catch(e => console.warn('SW error:', e));
+  });
+}
+
+// ── PWA INSTALL PROMPT ────────────────────────────────────────────────────────
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById('installBtn');
+  if (btn) btn.style.display = 'flex';
+});
+
+function installApp() {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(() => {
+    deferredPrompt = null;
+    const btn = document.getElementById('installBtn');
+    if (btn) btn.style.display = 'none';
+  });
+}
+</script>
+</body>
+</html>
