@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PENDOP">
+<meta name="theme-color" content="#f6a623">
+<meta name="description" content="Gestión de Pendientes Operativos – Campo Pendare">
+<title>PENDOP – Campo Pendare</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d1117; }
+  #root { min-height: 100vh; }
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator { filter: invert(0.7); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+// ─── PALETA INDUSTRIAL PETROLERA ───────────────────────────────────────────
+const COLORS = {
+  bg: "#0d1117",
+  surface: "#161b22",
+  surfaceAlt: "#1c2230",
+  border: "#2d3748",
+  accent: "#f6a623",
+  accentDark: "#c47d0e",
+  red: "#e53e3e",
+  redSoft: "#2d1515",
+  yellow: "#d69e2e",
+  yellowSoft: "#2d2415",
+  green: "#38a169",
+  greenSoft: "#142d1e",
+  gray: "#718096",
+  graySoft: "#1a1f2a",
+  text: "#e2e8f0",
+  textMuted: "#718096",
+  textDim: "#4a5568",
+};
+
+const AREAS = ["CPF","Cargadero","Clusters","Pozos","HSE","Mantenimiento","Producción","SCADA","Instrumentación"];
+const PRIORIDADES = ["Alta","Media","Baja"];
+const ESTADOS = ["Pendiente","En Proceso","Vencido","Cerrado"];
+
+function getColor(item) {
+  if (item.estado === "Cerrado") return { bg: COLORS.graySoft, border: COLORS.gray, dot: COLORS.gray };
+  if (item.estado === "Vencido" || item.prioridad === "Alta") return { bg: COLORS.redSoft, border: COLORS.red, dot: COLORS.red };
+  const now = new Date();
+  const comp = new Date(item.fechaCompromiso);
+  const diffH = (comp - now) / 36e5;
+  if (diffH < 24) return { bg: COLORS.yellowSoft, border: COLORS.yellow, dot: COLORS.yellow };
+  return { bg: COLORS.greenSoft, border: COLORS.green, dot: COLORS.green };
+}
+
+function formatDate(d) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("es-CO", { day:"2-digit", month:"short", year:"2-digit" });
+}
+function formatDateTime(d) {
+  if (!d) return "—";
+  return new Date(d).toLocaleString("es-CO", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" });
+}
+
+const SAMPLE = [
+  { id:1, nombre:"Validar comunicación PIT-PE65W-001", descripcion:"Verificar señal 4-20mA en SCADA", area:"SCADA", equipo:"PIT-PE65W-001", responsable:"Carlos Pérez", prioridad:"Alta", fechaCompromiso: new Date(Date.now()-3600000).toISOString(), estado:"Vencido", observaciones:"Alarma activa desde turno noche", fechaCierre:null, comentarioCierre:"" },
+  { id:2, nombre:"Cierre válvula TH-003A", descripcion:"Completar sellado de tanque TH-003A", area:"CPF", equipo:"TH-003A", responsable:"Ana Torres", prioridad:"Alta", fechaCompromiso: new Date(Date.now()+7200000).toISOString(), estado:"En Proceso", observaciones:"Requiere herramienta especializada", fechaCierre:null, comentarioCierre:"" },
+  { id:3, nombre:"Revisión alarma cargadero", descripcion:"Falla en sensor de nivel BN-021", area:"Cargadero", equipo:"BN-021", responsable:"Luis García", prioridad:"Media", fechaCompromiso: new Date(Date.now()+86400000).toISOString(), estado:"Pendiente", observaciones:"Pendiente desde ayer", fechaCierre:null, comentarioCierre:"" },
+  { id:4, nombre:"Prueba de pozo PD-14", descripcion:"Ensayo de producción programado", area:"Pozos", equipo:"PD-14", responsable:"María Ríos", prioridad:"Media", fechaCompromiso: new Date(Date.now()+172800000).toISOString(), estado:"Pendiente", observaciones:"Coordinar con producción", fechaCierre:null, comentarioCierre:"" },
+  { id:5, nombre:"Calibración transmisor FT-102", descripcion:"Mantenimiento preventivo programado", area:"Instrumentación", equipo:"FT-102", responsable:"Jorge Mesa", prioridad:"Baja", fechaCompromiso: new Date(Date.now()-86400000).toISOString(), estado:"Cerrado", observaciones:"Completado sin novedad", fechaCierre: new Date(Date.now()-3600000).toISOString(), comentarioCierre:"Calibrado y verificado en SCADA" },
+];
+
+// ─── COMPONENTES UI ─────────────────────────────────────────────────────────
+function Badge({ color, children }) {
+  return (
+    <span style={{
+      background: color+"22", color, border:`1px solid ${color}44`,
+      borderRadius:4, padding:"2px 7px", fontSize:11, fontWeight:700,
+      letterSpacing:"0.04em", textTransform:"uppercase"
+    }}>{children}</span>
+  );
+}
+
+function Dot({ color }) {
+  return <span style={{ display:"inline-block", width:8, height:8, borderRadius:"50%", background:color, marginRight:6, boxShadow:`0 0 6px ${color}88` }} />;
+}
+
+function Input({ label, value, onChange, type="text", placeholder, required }) {
+  return (
+    <div style={{ marginBottom:14 }}>
+      <label style={{ display:"block", fontSize:11, color:COLORS.textMuted, marginBottom:4, letterSpacing:"0.08em", textTransform:"uppercase" }}>{label}{required && <span style={{color:COLORS.accent}}> *</span>}</label>
+      <input
+        type={type} value={value} onChange={e=>onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          width:"100%", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+          borderRadius:8, padding:"10px 12px", color:COLORS.text, fontSize:14,
+          outline:"none", boxSizing:"border-box", fontFamily:"inherit"
+        }}
+      />
+    </div>
+  );
+}
+
+function Select({ label, value, onChange, options, required }) {
+  return (
+    <div style={{ marginBottom:14 }}>
+      <label style={{ display:"block", fontSize:11, color:COLORS.textMuted, marginBottom:4, letterSpacing:"0.08em", textTransform:"uppercase" }}>{label}{required && <span style={{color:COLORS.accent}}> *</span>}</label>
+      <select
+        value={value} onChange={e=>onChange(e.target.value)}
+        style={{
+          width:"100%", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+          borderRadius:8, padding:"10px 12px", color:COLORS.text, fontSize:14,
+          outline:"none", boxSizing:"border-box", fontFamily:"inherit"
+        }}
+      >
+        <option value="">Seleccionar…</option>
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function Textarea({ label, value, onChange, placeholder }) {
+  return (
+    <div style={{ marginBottom:14 }}>
+      <label style={{ display:"block", fontSize:11, color:COLORS.textMuted, marginBottom:4, letterSpacing:"0.08em", textTransform:"uppercase" }}>{label}</label>
+      <textarea
+        value={value} onChange={e=>onChange(e.target.value)}
+        placeholder={placeholder} rows={3}
+        style={{
+          width:"100%", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+          borderRadius:8, padding:"10px 12px", color:COLORS.text, fontSize:14,
+          outline:"none", boxSizing:"border-box", fontFamily:"inherit", resize:"vertical"
+        }}
+      />
+    </div>
+  );
+}
+
+function Btn({ onClick, children, variant="primary", small, full }) {
+  const styles = {
+    primary:{ background:COLORS.accent, color:"#000", border:"none" },
+    danger:{ background:COLORS.red, color:"#fff", border:"none" },
+    ghost:{ background:"transparent", color:COLORS.text, border:`1px solid ${COLORS.border}` },
+    success:{ background:COLORS.green, color:"#fff", border:"none" },
+  };
+  return (
+    <button onClick={onClick} style={{
+      ...styles[variant],
+      borderRadius:8, padding: small ? "7px 14px" : "11px 20px",
+      fontSize: small ? 12 : 14, fontWeight:700, cursor:"pointer",
+      width: full ? "100%" : "auto", fontFamily:"inherit",
+      letterSpacing:"0.03em", transition:"opacity 0.15s"
+    }}
+    onMouseOver={e=>e.currentTarget.style.opacity="0.85"}
+    onMouseOut={e=>e.currentTarget.style.opacity="1"}
+    >{children}</button>
+  );
+}
+
+// ─── MODAL ──────────────────────────────────────────────────────────────────
+function Modal({ open, onClose, title, children }) {
+  if (!open) return null;
+  return (
+    <div style={{
+      position:"fixed", inset:0, background:"#000c", zIndex:1000,
+      display:"flex", alignItems:"flex-end", justifyContent:"center"
+    }} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{
+        background:COLORS.surface, borderRadius:"18px 18px 0 0",
+        padding:"20px 16px 32px", width:"100%", maxWidth:480,
+        maxHeight:"92vh", overflowY:"auto",
+        borderTop:`2px solid ${COLORS.accent}`
+      }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+          <h3 style={{ margin:0, color:COLORS.accent, fontSize:16, fontWeight:800 }}>{title}</h3>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:COLORS.textMuted, fontSize:22, cursor:"pointer" }}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─── FORM PENDIENTE ──────────────────────────────────────────────────────────
+function FormPendiente({ initial, onSave, onCancel }) {
+  const blank = { nombre:"", descripcion:"", area:"", equipo:"", responsable:"", prioridad:"Media", fechaCompromiso:"", estado:"Pendiente", observaciones:"" };
+  const [f, setF] = useState(initial || blank);
+  const set = k => v => setF(p=>({...p,[k]:v}));
+  const valid = f.nombre && f.area && f.responsable && f.fechaCompromiso;
+  return (
+    <div>
+      <Input label="Nombre de la actividad" value={f.nombre} onChange={set("nombre")} required placeholder="Ej: Revisar válvula XV-001" />
+      <Textarea label="Descripción" value={f.descripcion} onChange={set("descripcion")} placeholder="Detalle de la actividad…" />
+      <Select label="Área" value={f.area} onChange={set("area")} options={AREAS} required />
+      <Input label="Equipo / Sistema" value={f.equipo} onChange={set("equipo")} placeholder="Ej: PIT-PE65W-001" />
+      <Input label="Responsable" value={f.responsable} onChange={set("responsable")} required placeholder="Nombre del responsable" />
+      <Select label="Prioridad" value={f.prioridad} onChange={set("prioridad")} options={PRIORIDADES} required />
+      <Select label="Estado" value={f.estado} onChange={set("estado")} options={ESTADOS} />
+      <Input label="Fecha compromiso" value={f.fechaCompromiso} onChange={set("fechaCompromiso")} type="datetime-local" required />
+      <Textarea label="Observaciones" value={f.observaciones} onChange={set("observaciones")} placeholder="Notas adicionales…" />
+      <div style={{ display:"flex", gap:10, marginTop:8 }}>
+        <Btn variant="ghost" onClick={onCancel} full>Cancelar</Btn>
+        <Btn variant="primary" onClick={()=>valid && onSave(f)} full>💾 Guardar</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ─── FORM CIERRE ─────────────────────────────────────────────────────────────
+function FormCierre({ onClose, onCancel }) {
+  const [comentario, setComentario] = useState("");
+  return (
+    <div>
+      <p style={{ color:COLORS.textMuted, fontSize:13, marginTop:0 }}>Registre el comentario de cierre para dejar trazabilidad de la actividad.</p>
+      <Textarea label="Comentario de cierre" value={comentario} onChange={setComentario} placeholder="Descripción de cómo se resolvió…" />
+      <div style={{ display:"flex", gap:10, marginTop:8 }}>
+        <Btn variant="ghost" onClick={onCancel} full>Cancelar</Btn>
+        <Btn variant="success" onClick={()=>onClose(comentario)} full>✅ Confirmar cierre</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ─── FORM POSPONER ───────────────────────────────────────────────────────────
+function FormPosponer({ onPosponer, onCancel }) {
+  const opciones = [
+    { label:"15 minutos", ms:9e5 },
+    { label:"30 minutos", ms:18e5 },
+    { label:"1 hora", ms:36e5 },
+    { label:"4 horas", ms:144e5 },
+    { label:"Al día siguiente", ms:864e5 },
+  ];
+  const [custom, setCustom] = useState("");
+  return (
+    <div>
+      <p style={{ color:COLORS.textMuted, fontSize:13, marginTop:0 }}>Seleccione el tiempo para posponer el recordatorio:</p>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:14 }}>
+        {opciones.map(o => (
+          <button key={o.label} onClick={()=>onPosponer(o.ms)} style={{
+            background:COLORS.surfaceAlt, border:`1px solid ${COLORS.border}`,
+            borderRadius:8, padding:"10px", color:COLORS.text, fontSize:13,
+            fontWeight:700, cursor:"pointer", fontFamily:"inherit"
+          }}>⏱ {o.label}</button>
+        ))}
+      </div>
+      <Input label="Fecha y hora personalizada" value={custom} onChange={setCustom} type="datetime-local" />
+      {custom && <Btn variant="primary" onClick={()=>onPosponer(new Date(custom)-Date.now())} full>Posponer a fecha indicada</Btn>}
+      <div style={{ marginTop:10 }}>
+        <Btn variant="ghost" onClick={onCancel} full>Cancelar</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ─── TARJETA PENDIENTE ───────────────────────────────────────────────────────
+function TarjetaPendiente({ item, onCerrar, onPosponer, onEditar }) {
+  const c = getColor(item);
+  const [expand, setExpand] = useState(false);
+  return (
+    <div style={{
+      background:c.bg, border:`1px solid ${c.border}`,
+      borderRadius:12, marginBottom:10, overflow:"hidden",
+      transition:"box-shadow 0.2s"
+    }}>
+      <div style={{ padding:"12px 14px", cursor:"pointer" }} onClick={()=>setExpand(p=>!p)}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
+          <div style={{ flex:1 }}>
+            <div style={{ display:"flex", alignItems:"center", flexWrap:"wrap", gap:6, marginBottom:4 }}>
+              <Dot color={c.dot} />
+              <span style={{ color:COLORS.text, fontSize:14, fontWeight:700 }}>{item.nombre}</span>
+            </div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+              <Badge color={item.prioridad==="Alta"?COLORS.red:item.prioridad==="Media"?COLORS.yellow:COLORS.gray}>{item.prioridad}</Badge>
+              <Badge color={COLORS.accent}>{item.area}</Badge>
+              <Badge color={item.estado==="Cerrado"?COLORS.gray:item.estado==="Vencido"?COLORS.red:COLORS.green}>{item.estado}</Badge>
+            </div>
+          </div>
+          <span style={{ color:COLORS.textMuted, fontSize:18 }}>{expand?"▲":"▼"}</span>
+        </div>
+        <div style={{ display:"flex", gap:12, marginTop:8, fontSize:12, color:COLORS.textMuted }}>
+          <span>👤 {item.responsable}</span>
+          <span>📅 {formatDate(item.fechaCompromiso)}</span>
+          {item.equipo && <span>⚙️ {item.equipo}</span>}
+        </div>
+      </div>
+      {expand && (
+        <div style={{ borderTop:`1px solid ${COLORS.border}`, padding:"12px 14px" }}>
+          {item.descripcion && <p style={{ margin:"0 0 8px", fontSize:13, color:COLORS.textMuted }}>{item.descripcion}</p>}
+          {item.observaciones && <p style={{ margin:"0 0 12px", fontSize:12, color:COLORS.textDim, fontStyle:"italic" }}>📝 {item.observaciones}</p>}
+          {item.estado === "Cerrado" && (
+            <div style={{ background:COLORS.greenSoft, borderRadius:8, padding:"8px 12px", marginBottom:10, fontSize:12, color:COLORS.green }}>
+              ✅ Cerrado: {formatDateTime(item.fechaCierre)} — {item.comentarioCierre || "Sin comentario"}
+            </div>
+          )}
+          {item.estado !== "Cerrado" && (
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+              <Btn small variant="success" onClick={()=>onCerrar(item.id)}>✅ Cerrar</Btn>
+              <Btn small variant="ghost" onClick={()=>onPosponer(item.id)}>⏱ Posponer</Btn>
+              <Btn small variant="ghost" onClick={()=>onEditar(item)}>✏️ Editar</Btn>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PANEL DASHBOARD ─────────────────────────────────────────────────────────
+function Dashboard({ items, onNew }) {
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const manana = new Date(hoy); manana.setDate(manana.getDate()+1);
+  const vencidos = items.filter(i=>i.estado==="Vencido"||(i.estado!=="Cerrado"&&new Date(i.fechaCompromiso)<new Date()));
+  const hoyItems = items.filter(i=>{ const d=new Date(i.fechaCompromiso); return d>=hoy&&d<manana&&i.estado!=="Cerrado"; });
+  const criticos = items.filter(i=>i.prioridad==="Alta"&&i.estado!=="Cerrado");
+  const cerradosHoy = items.filter(i=>{ if(!i.fechaCierre)return false; const d=new Date(i.fechaCierre); return d>=hoy&&d<manana; });
+
+  const StatCard = ({label,value,color,icon})=>(
+    <div style={{ background:color+"18", border:`1px solid ${color}33`, borderRadius:12, padding:"14px", textAlign:"center" }}>
+      <div style={{ fontSize:26, marginBottom:4 }}>{icon}</div>
+      <div style={{ fontSize:28, fontWeight:900, color, fontFamily:"monospace" }}>{value}</div>
+      <div style={{ fontSize:11, color:COLORS.textMuted, textTransform:"uppercase", letterSpacing:"0.06em", marginTop:2 }}>{label}</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:18 }}>
+        <StatCard label="Pendientes Hoy" value={hoyItems.length} color={COLORS.yellow} icon="📋" />
+        <StatCard label="Vencidos" value={vencidos.length} color={COLORS.red} icon="🔴" />
+        <StatCard label="Críticos" value={criticos.length} color={COLORS.accent} icon="⚠️" />
+        <StatCard label="Cerrados Hoy" value={cerradosHoy.length} color={COLORS.green} icon="✅" />
+      </div>
+      <button onClick={onNew} style={{
+        width:"100%", background:COLORS.accent, border:"none", borderRadius:12,
+        padding:"15px", fontSize:15, fontWeight:900, color:"#000",
+        cursor:"pointer", letterSpacing:"0.05em", marginBottom:18
+      }}>＋ NUEVO PENDIENTE</button>
+    </div>
+  );
+}
+
+// ─── REPORTES ────────────────────────────────────────────────────────────────
+function Reportes({ items }) {
+  const [tipo, setTipo] = useState("abiertos");
+  const [copied, setCopied] = useState(false);
+
+  const abiertos = items.filter(i=>i.estado!=="Cerrado");
+  const vencidos = items.filter(i=>i.estado==="Vencido"||(i.estado!=="Cerrado"&&new Date(i.fechaCompromiso)<new Date()));
+  const cerrados = items.filter(i=>i.estado==="Cerrado");
+
+  const byResp = {};
+  items.forEach(i=>{ if(!byResp[i.responsable])byResp[i.responsable]=[]; byResp[i.responsable].push(i); });
+  const byArea = {};
+  items.forEach(i=>{ if(!byArea[i.area])byArea[i.area]=[]; byArea[i.area].push(i); });
+
+  const turnoText = `📋 *ENTREGA DE TURNO — PENDIENTES OPERATIVOS*
+📅 ${new Date().toLocaleDateString("es-CO",{weekday:"long",day:"2-digit",month:"long",year:"numeric"})}
+
+⚠️ VENCIDOS (${vencidos.length}):
+${vencidos.map(i=>`• ${i.nombre} [${i.area}] — ${i.responsable}`).join("\n")||"• Ninguno"}
+
+🔄 ABIERTOS (${abiertos.filter(i=>i.estado!=="Vencido").length}):
+${abiertos.filter(i=>i.estado!=="Vencido").map(i=>`• ${i.nombre} — ${i.responsable} — ${formatDate(i.fechaCompromiso)}`).join("\n")||"• Ninguno"}
+
+✅ CERRADOS HOY (${cerrados.length}):
+${cerrados.map(i=>`• ${i.nombre} — ${i.comentarioCierre||"Sin comentario"}`).join("\n")||"• Ninguno"}
+
+_Generado automáticamente por SistemaOP Campo Pendare_`;
+
+  const semanalText = `📊 *REPORTE SEMANAL — PENDIENTES OPERATIVOS*
+
+Total actividades: ${items.length}
+Cerradas: ${cerrados.length} (${items.length?Math.round(cerrados.length/items.length*100):0}%)
+Abiertas: ${abiertos.length}
+Vencidas: ${vencidos.length}
+
+POR ÁREA:
+${Object.entries(byArea).map(([k,v])=>`• ${k}: ${v.length} total, ${v.filter(i=>i.estado==="Cerrado").length} cerradas`).join("\n")}
+
+POR RESPONSABLE:
+${Object.entries(byResp).map(([k,v])=>`• ${k}: ${v.filter(i=>i.estado==="Cerrado").length}/${v.length} cerradas (${Math.round(v.filter(i=>i.estado==="Cerrado").length/v.length*100)}%)`).join("\n")}`;
+
+  const copy = (txt) => {
+    navigator.clipboard?.writeText(txt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000)});
+  };
+
+  const tabs = [
+    {k:"abiertos",label:"Abiertos"},
+    {k:"vencidos",label:"Vencidos"},
+    {k:"cerrados",label:"Cerrados"},
+    {k:"turno",label:"Turno"},
+    {k:"semanal",label:"Semanal"},
+  ];
+
+  return (
+    <div>
+      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
+        {tabs.map(t=>(
+          <button key={t.k} onClick={()=>setTipo(t.k)} style={{
+            background: tipo===t.k ? COLORS.accent : COLORS.surfaceAlt,
+            color: tipo===t.k ? "#000" : COLORS.text,
+            border:`1px solid ${tipo===t.k?COLORS.accent:COLORS.border}`,
+            borderRadius:8, padding:"7px 13px", fontSize:12, fontWeight:700,
+            cursor:"pointer", fontFamily:"inherit"
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {tipo==="abiertos" && (
+        <div>
+          <h4 style={{color:COLORS.accent,margin:"0 0 10px",fontSize:14}}>Pendientes Abiertos ({abiertos.length})</h4>
+          {abiertos.length===0?<p style={{color:COLORS.textMuted}}>Sin pendientes abiertos</p>:
+          abiertos.map(i=>{const c=getColor(i); return(
+            <div key={i.id} style={{background:c.bg,border:`1px solid ${c.border}`,borderRadius:8,padding:"10px 12px",marginBottom:8}}>
+              <div style={{fontWeight:700,fontSize:13,color:COLORS.text}}>{i.nombre}</div>
+              <div style={{fontSize:11,color:COLORS.textMuted,marginTop:4}}>{i.area} · {i.responsable} · {formatDate(i.fechaCompromiso)}</div>
+            </div>
+          );})}
+        </div>
+      )}
+      {tipo==="vencidos" && (
+        <div>
+          <h4 style={{color:COLORS.red,margin:"0 0 10px",fontSize:14}}>Pendientes Vencidos ({vencidos.length})</h4>
+          {vencidos.length===0?<p style={{color:COLORS.textMuted}}>Sin vencidos ✅</p>:
+          vencidos.map(i=>(
+            <div key={i.id} style={{background:COLORS.redSoft,border:`1px solid ${COLORS.red}`,borderRadius:8,padding:"10px 12px",marginBottom:8}}>
+              <div style={{fontWeight:700,fontSize:13,color:COLORS.text}}>{i.nombre}</div>
+              <div style={{fontSize:11,color:COLORS.textMuted,marginTop:4}}>{i.area} · {i.responsable} · Venció: {formatDateTime(i.fechaCompromiso)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {tipo==="cerrados" && (
+        <div>
+          <h4 style={{color:COLORS.green,margin:"0 0 10px",fontSize:14}}>Actividades Cerradas ({cerrados.length})</h4>
+          {cerrados.length===0?<p style={{color:COLORS.textMuted}}>Sin actividades cerradas</p>:
+          cerrados.map(i=>(
+            <div key={i.id} style={{background:COLORS.greenSoft,border:`1px solid ${COLORS.green}44`,borderRadius:8,padding:"10px 12px",marginBottom:8}}>
+              <div style={{fontWeight:700,fontSize:13,color:COLORS.text}}>{i.nombre}</div>
+              <div style={{fontSize:11,color:COLORS.textMuted,marginTop:2}}>{i.responsable} · Cerrado: {formatDateTime(i.fechaCierre)}</div>
+              {i.comentarioCierre&&<div style={{fontSize:11,color:COLORS.green,marginTop:4,fontStyle:"italic"}}>"{i.comentarioCierre}"</div>}
+            </div>
+          ))}
+        </div>
+      )}
+      {(tipo==="turno"||tipo==="semanal") && (
+        <div>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <h4 style={{color:COLORS.accent,margin:0,fontSize:14}}>{tipo==="turno"?"Reporte Entrega de Turno":"Reporte Semanal"}</h4>
+            <Btn small variant="primary" onClick={()=>copy(tipo==="turno"?turnoText:semanalText)}>{copied?"¡Copiado!":"📋 Copiar"}</Btn>
+          </div>
+          <pre style={{
+            background:COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8,
+            padding:14, fontSize:12, color:COLORS.text, whiteSpace:"pre-wrap",
+            lineHeight:1.7, fontFamily:"'Courier New', monospace", margin:0
+          }}>{tipo==="turno"?turnoText:semanalText}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── APP PRINCIPAL ────────────────────────────────────────────────────────────
+function App() {
+  const [items, setItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem("pendop_items");
+      return saved ? JSON.parse(saved) : SAMPLE;
+    } catch { return SAMPLE; }
+  });
+  const [tab, setTab] = useState("dashboard");
+  const [filtroArea, setFiltroArea] = useState("");
+  const [filtroResp, setFiltroResp] = useState("");
+  const [filtroPrioridad, setFiltroPrioridad] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("");
+  const [search, setSearch] = useState("");
+  const [modalNuevo, setModalNuevo] = useState(false);
+  const [modalEditar, setModalEditar] = useState(null);
+  const [modalCerrar, setModalCerrar] = useState(null);
+  const [modalPosponer, setModalPosponer] = useState(null);
+  const [nextId, setNextId] = useState(() => {
+    try {
+      const saved = localStorage.getItem("pendop_items");
+      if (saved) { const arr = JSON.parse(saved); return Math.max(...arr.map(i=>i.id), 9) + 1; }
+    } catch {}
+    return 10;
+  });
+  const [notif, setNotif] = useState(null);
+
+  // Persist to localStorage
+  useEffect(() => {
+    try { localStorage.setItem("pendop_items", JSON.stringify(items)); } catch {}
+  }, [items]);
+
+  // Verificar vencimientos
+  useEffect(()=>{
+    const t = setInterval(()=>{
+      setItems(prev=>prev.map(i=>{
+        if(i.estado==="Cerrado"||i.estado==="Vencido") return i;
+        if(new Date(i.fechaCompromiso)<new Date()) return {...i,estado:"Vencido"};
+        return i;
+      }));
+    }, 30000);
+    return ()=>clearInterval(t);
+  },[]);
+
+  const showNotif = (msg,color=COLORS.green) => {
+    setNotif({msg,color});
+    setTimeout(()=>setNotif(null),3000);
+  };
+
+  const guardarNuevo = (f) => {
+    setItems(p=>[...p,{...f,id:nextId,fechaCierre:null,comentarioCierre:""}]);
+    setNextId(p=>p+1);
+    setModalNuevo(false);
+    showNotif("✅ Pendiente registrado correctamente");
+  };
+
+  const guardarEditar = (f) => {
+    setItems(p=>p.map(i=>i.id===modalEditar.id?{...i,...f}:i));
+    setModalEditar(null);
+    showNotif("✅ Pendiente actualizado");
+  };
+
+  const cerrarItem = (id, comentario) => {
+    setItems(p=>p.map(i=>i.id===id?{...i,estado:"Cerrado",fechaCierre:new Date().toISOString(),comentarioCierre:comentario}:i));
+    setModalCerrar(null);
+    showNotif("✅ Actividad cerrada correctamente", COLORS.green);
+  };
+
+  const posponerItem = (id, ms) => {
+    if(ms<=0){setModalPosponer(null);return;}
+    setItems(p=>p.map(i=>{
+      if(i.id!==id) return i;
+      const nuevaFecha = new Date(new Date(i.fechaCompromiso).getTime()+ms).toISOString();
+      return {...i,fechaCompromiso:nuevaFecha,estado:"Pendiente"};
+    }));
+    setModalPosponer(null);
+    showNotif("⏱ Recordatorio pospuesto", COLORS.yellow);
+  };
+
+  const filtered = items.filter(i=>{
+    if(filtroArea && i.area!==filtroArea) return false;
+    if(filtroResp && !i.responsable.toLowerCase().includes(filtroResp.toLowerCase())) return false;
+    if(filtroPrioridad && i.prioridad!==filtroPrioridad) return false;
+    if(filtroEstado && i.estado!==filtroEstado) return false;
+    if(search && !i.nombre.toLowerCase().includes(search.toLowerCase()) && !i.equipo?.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  const respList = [...new Set(items.map(i=>i.responsable))];
+
+  const navTabs = [
+    {k:"dashboard",icon:"🏠",label:"Inicio"},
+    {k:"lista",icon:"📋",label:"Lista"},
+    {k:"reportes",icon:"📊",label:"Reportes"},
+  ];
+
+  return (
+    <div style={{ fontFamily:"'Segoe UI', system-ui, sans-serif", background:COLORS.bg, color:COLORS.text, minHeight:"100vh", maxWidth:480, margin:"0 auto", position:"relative" }}>
+
+      {/* HEADER */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLORS.surface} 0%, #1a2035 100%)`,
+        borderBottom:`2px solid ${COLORS.accent}22`,
+        padding:"14px 16px 10px", position:"sticky", top:0, zIndex:100
+      }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:20 }}>🛢️</span>
+              <span style={{ fontWeight:900, fontSize:16, color:COLORS.accent, letterSpacing:"0.05em" }}>PENDOP</span>
+              <span style={{ fontSize:11, color:COLORS.textMuted, background:COLORS.surfaceAlt, padding:"2px 8px", borderRadius:10 }}>Campo Pendare</span>
+            </div>
+            <div style={{ fontSize:11, color:COLORS.textDim, marginTop:2 }}>
+              {new Date().toLocaleDateString("es-CO",{weekday:"long",day:"2-digit",month:"long"})}
+            </div>
+          </div>
+          <div style={{ textAlign:"right" }}>
+            <div style={{ fontSize:11, color:COLORS.textMuted }}>Pendientes</div>
+            <div style={{ fontWeight:900, fontSize:22, color:items.filter(i=>i.estado!=="Cerrado").length>0?COLORS.accent:COLORS.green, fontFamily:"monospace" }}>
+              {items.filter(i=>i.estado!=="Cerrado").length}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* NOTIFICACION */}
+      {notif && (
+        <div style={{
+          position:"fixed",top:70,left:"50%",transform:"translateX(-50%)",
+          background:notif.color,color:"#fff",borderRadius:10,padding:"10px 20px",
+          fontSize:13,fontWeight:700,zIndex:2000,boxShadow:"0 4px 20px #0008",
+          whiteSpace:"nowrap"
+        }}>{notif.msg}</div>
+      )}
+
+      {/* CONTENIDO */}
+      <div style={{ padding:"16px", paddingBottom:80 }}>
+
+        {tab==="dashboard" && (
+          <>
+            <Dashboard items={items} onNew={()=>setModalNuevo(true)} />
+            {items.filter(i=>i.prioridad==="Alta"&&i.estado!=="Cerrado").length>0 && (
+              <div>
+                <div style={{ fontSize:12, color:COLORS.red, fontWeight:800, textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:8 }}>⚠️ Críticos</div>
+                {items.filter(i=>i.prioridad==="Alta"&&i.estado!=="Cerrado").map(i=>(
+                  <TarjetaPendiente key={i.id} item={i} onCerrar={id=>setModalCerrar(id)} onPosponer={id=>setModalPosponer(id)} onEditar={setModalEditar} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {tab==="lista" && (
+          <>
+            <div style={{ background:COLORS.surface, borderRadius:12, padding:"12px", marginBottom:14, border:`1px solid ${COLORS.border}` }}>
+              <input
+                value={search} onChange={e=>setSearch(e.target.value)}
+                placeholder="🔍 Buscar por nombre o equipo…"
+                style={{ width:"100%", background:COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, padding:"9px 12px", color:COLORS.text, fontSize:13, boxSizing:"border-box", marginBottom:10, fontFamily:"inherit", outline:"none" }}
+              />
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                <select value={filtroArea} onChange={e=>setFiltroArea(e.target.value)} style={{background:COLORS.bg,border:`1px solid ${COLORS.border}`,borderRadius:8,padding:"8px",color:COLORS.text,fontSize:12,fontFamily:"inherit"}}>
+                  <option value="">Todas las áreas</option>{AREAS.map(a=><option key={a}>{a}</option>)}
+                </select>
+                <select value={filtroPrioridad} onChange={e=>setFiltroPrioridad(e.target.value)} style={{background:COLORS.bg,border:`1px solid ${COLORS.border}`,borderRadius:8,padding:"8px",color:COLORS.text,fontSize:12,fontFamily:"inherit"}}>
+                  <option value="">Toda prioridad</option>{PRIORIDADES.map(a=><option key={a}>{a}</option>)}
+                </select>
+                <select value={filtroEstado} onChange={e=>setFiltroEstado(e.target.value)} style={{background:COLORS.bg,border:`1px solid ${COLORS.border}`,borderRadius:8,padding:"8px",color:COLORS.text,fontSize:12,fontFamily:"inherit"}}>
+                  <option value="">Todo estado</option>{ESTADOS.map(a=><option key={a}>{a}</option>)}
+                </select>
+                <select value={filtroResp} onChange={e=>setFiltroResp(e.target.value)} style={{background:COLORS.bg,border:`1px solid ${COLORS.border}`,borderRadius:8,padding:"8px",color:COLORS.text,fontSize:12,fontFamily:"inherit"}}>
+                  <option value="">Todos</option>{respList.map(a=><option key={a}>{a}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ fontSize:12, color:COLORS.textMuted, marginBottom:10 }}>{filtered.length} actividades encontradas</div>
+            {filtered.length===0
+              ? <div style={{ textAlign:"center", color:COLORS.textMuted, padding:40 }}>No hay pendientes con estos filtros</div>
+              : filtered.map(i=>(
+                <TarjetaPendiente key={i.id} item={i} onCerrar={id=>setModalCerrar(id)} onPosponer={id=>setModalPosponer(id)} onEditar={setModalEditar} />
+              ))
+            }
+          </>
+        )}
+
+        {tab==="reportes" && <Reportes items={items} />}
+
+      </div>
+
+      {/* NAV */}
+      <div style={{
+        position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)",
+        width:"100%", maxWidth:480, background:COLORS.surface,
+        borderTop:`1px solid ${COLORS.border}`, display:"flex",
+        padding:"8px 0 12px", zIndex:200
+      }}>
+        {navTabs.map(t=>(
+          <button key={t.k} onClick={()=>setTab(t.k)} style={{
+            flex:1, background:"none", border:"none", cursor:"pointer",
+            display:"flex", flexDirection:"column", alignItems:"center", gap:3
+          }}>
+            <span style={{ fontSize:22 }}>{t.icon}</span>
+            <span style={{ fontSize:10, color:tab===t.k?COLORS.accent:COLORS.textMuted, fontWeight:tab===t.k?800:400 }}>{t.label}</span>
+            {tab===t.k && <span style={{ width:20, height:2, background:COLORS.accent, borderRadius:2 }} />}
+          </button>
+        ))}
+      </div>
+
+      {/* MODALS */}
+      <Modal open={modalNuevo} onClose={()=>setModalNuevo(false)} title="Nuevo Pendiente">
+        <FormPendiente onSave={guardarNuevo} onCancel={()=>setModalNuevo(false)} />
+      </Modal>
+      <Modal open={!!modalEditar} onClose={()=>setModalEditar(null)} title="Editar Pendiente">
+        <FormPendiente initial={modalEditar} onSave={guardarEditar} onCancel={()=>setModalEditar(null)} />
+      </Modal>
+      <Modal open={!!modalCerrar} onClose={()=>setModalCerrar(null)} title="Cerrar Actividad">
+        <FormCierre onClose={c=>cerrarItem(modalCerrar,c)} onCancel={()=>setModalCerrar(null)} />
+      </Modal>
+      <Modal open={!!modalPosponer} onClose={()=>setModalPosponer(null)} title="Posponer Recordatorio">
+        <FormPosponer onPosponer={ms=>posponerItem(modalPosponer,ms)} onCancel={()=>setModalPosponer(null)} />
+      </Modal>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
