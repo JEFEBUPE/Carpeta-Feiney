@@ -352,6 +352,331 @@ function Dashboard({ items, onNew }) {
   );
 }
 
+// ─── REPORTE EJECUTIVO PDF ───────────────────────────────────────────────────
+function generarReporteEjecutivo(items) {
+  const now = new Date();
+  const abiertos  = items.filter(i => i.estado !== "Cerrado");
+  const vencidos  = items.filter(i => i.estado === "Vencido" || (i.estado !== "Cerrado" && new Date(i.fechaCompromiso) < now));
+  const enProceso = items.filter(i => i.estado === "En Proceso");
+  const pendientes= items.filter(i => i.estado === "Pendiente");
+  const cerrados  = items.filter(i => i.estado === "Cerrado");
+  const criticos  = items.filter(i => i.prioridad === "Alta" && i.estado !== "Cerrado");
+  const pctTotal  = items.length ? Math.round(cerrados.length / items.length * 100) : 0;
+
+  const byArea = {};
+  items.forEach(i => { if (!byArea[i.area]) byArea[i.area] = []; byArea[i.area].push(i); });
+  const byResp = {};
+  items.forEach(i => { if (!byResp[i.responsable]) byResp[i.responsable] = []; byResp[i.responsable].push(i); });
+
+  const sorted = [...items].sort((a, b) => {
+    const os = { Vencido:0, "En Proceso":1, Pendiente:2, Cerrado:3 };
+    const op = { Alta:0, Media:1, Baja:2 };
+    if (os[a.estado] !== os[b.estado]) return os[a.estado] - os[b.estado];
+    if (op[a.prioridad] !== op[b.prioridad]) return op[a.prioridad] - op[b.prioridad];
+    return new Date(a.fechaCompromiso) - new Date(b.fechaCompromiso);
+  });
+
+  const dateStr = now.toLocaleDateString("es-CO", {weekday:"long", day:"2-digit", month:"long", year:"numeric"});
+  const timeStr = now.toLocaleTimeString("es-CO", {hour:"2-digit", minute:"2-digit"});
+
+  const fdt = d => d ? new Date(d).toLocaleString("es-CO",{day:"2-digit",month:"short",year:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—";
+  const fd  = d => d ? new Date(d).toLocaleDateString("es-CO",{day:"2-digit",month:"short",year:"2-digit"}) : "—";
+
+  const sBadge = e => {
+    const c = {Vencido:"#c53030","En Proceso":"#2b6cb0",Pendiente:"#b7791f",Cerrado:"#276749"}[e]||"#4a5568";
+    const bg= {Vencido:"#fff5f5","En Proceso":"#ebf8ff",Pendiente:"#fffff0",Cerrado:"#f0fff4"}[e]||"#f7fafc";
+    return `<span style="background:${bg};color:${c};border:1px solid ${c}55;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap">${e}</span>`;
+  };
+  const pBadge = p => {
+    const c = {Alta:"#c53030",Media:"#b7791f",Baja:"#4a5568"}[p]||"#4a5568";
+    const bg= {Alta:"#fff5f5",Media:"#fffff0",Baja:"#f7fafc"}[p]||"#f7fafc";
+    return `<span style="background:${bg};color:${c};border:1px solid ${c}55;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700">${p}</span>`;
+  };
+  const barHtml = (pct, color) =>
+    `<div style="background:#e2e8f0;border-radius:3px;height:9px;width:100%"><div style="background:${color};height:9px;border-radius:3px;width:${pct}%"></div></div>`;
+  const kpiColor = pct => pct >= 80 ? "#276749" : pct >= 50 ? "#b7791f" : "#c53030";
+
+  const alertasHTML = vencidos.length === 0 ? "" : `
+  <div class="section">
+    <div class="sec-title red-title">&#128680; Alertas — Actividades Vencidas y Críticas (${vencidos.length})</div>
+    ${vencidos.map(i => `
+    <div class="alert-box">
+      <div class="alert-name">${i.nombre}${i.prioridad==="Alta"?` <span class="badge-alta">&#9888; ALTA</span>`:""}</div>
+      <div class="alert-meta">
+        <span>&#9881; ${i.equipo||"—"}</span><span>&#128205; ${i.area}</span>
+        <span>&#128100; ${i.responsable}</span>
+        <span>&#128197; Venció: ${fdt(i.fechaCompromiso)}</span>
+      </div>
+      ${i.observaciones ? `<div class="obs">&#128221; ${i.observaciones}</div>` : ""}
+    </div>`).join("")}
+  </div>`;
+
+  const actividadesHTML = `
+  <div class="section">
+    <div class="sec-title">&#128203; Detalle Completo de Actividades (${items.length})</div>
+    <table>
+      <thead><tr>
+        <th style="width:28%">Actividad</th>
+        <th style="width:9%">Área</th>
+        <th style="width:11%">Equipo</th>
+        <th style="width:12%">Responsable</th>
+        <th style="width:8%;text-align:center">Prioridad</th>
+        <th style="width:9%;text-align:center">Estado</th>
+        <th style="width:13%">Compromiso</th>
+        <th style="width:10%">Cierre</th>
+      </tr></thead>
+      <tbody>
+        ${sorted.map((i, idx) => {
+          const bg = i.estado==="Cerrado" ? "#f9f9f9" : i.estado==="Vencido" ? "#fff5f5" : i.prioridad==="Alta" ? "#fffaf0" : idx%2===0 ? "#fff" : "#fafafa";
+          return `<tr style="background:${bg}">
+            <td>
+              <div style="font-weight:700;color:#1a202c;font-size:12px">${i.nombre}</div>
+              ${i.descripcion ? `<div style="font-size:10px;color:#718096;margin-top:2px">${i.descripcion}</div>` : ""}
+              ${i.observaciones ? `<div style="font-size:10px;color:#a0aec0;margin-top:2px;font-style:italic">${i.observaciones}</div>` : ""}
+            </td>
+            <td style="font-size:11px">${i.area}</td>
+            <td style="font-size:11px;font-family:monospace">${i.equipo||"—"}</td>
+            <td style="font-size:11px">${i.responsable}</td>
+            <td style="text-align:center">${pBadge(i.prioridad)}</td>
+            <td style="text-align:center">${sBadge(i.estado)}</td>
+            <td style="font-size:11px">${fdt(i.fechaCompromiso)}</td>
+            <td style="font-size:11px;color:#38a169">${i.fechaCierre ? fd(i.fechaCierre) : "—"}</td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  </div>`;
+
+  const areaHTML = `
+  <div class="section">
+    <div class="sec-title">&#128205; Análisis por Área</div>
+    <table>
+      <thead><tr>
+        <th>Área</th><th style="text-align:center">Total</th>
+        <th style="text-align:center">Pendiente</th><th style="text-align:center">En Proceso</th>
+        <th style="text-align:center">Vencido</th><th style="text-align:center">Cerrado</th>
+        <th style="width:18%">Avance</th><th style="text-align:center">%</th>
+      </tr></thead>
+      <tbody>
+        ${Object.entries(byArea).sort((a,b)=>b[1].length-a[1].length).map(([area,list],idx)=>{
+          const t=list.length, c=list.filter(i=>i.estado==="Cerrado").length;
+          const pnd=list.filter(i=>i.estado==="Pendiente").length;
+          const enp=list.filter(i=>i.estado==="En Proceso").length;
+          const v=list.filter(i=>i.estado==="Vencido"||(i.estado!=="Cerrado"&&new Date(i.fechaCompromiso)<now)).length;
+          const p=t?Math.round(c/t*100):0;
+          const col=p>=80?"#276749":p>=50?"#b7791f":"#c53030";
+          return `<tr style="background:${idx%2===0?"#fff":"#fafafa"}">
+            <td style="font-weight:700">${area}</td>
+            <td style="text-align:center;font-weight:700">${t}</td>
+            <td style="text-align:center;color:#b7791f">${pnd}</td>
+            <td style="text-align:center;color:#2b6cb0">${enp}</td>
+            <td style="text-align:center;color:#c53030;font-weight:${v>0?700:400}">${v}</td>
+            <td style="text-align:center;color:#276749">${c}</td>
+            <td>${barHtml(p,col)}</td>
+            <td style="text-align:center;font-weight:800;color:${col}">${p}%</td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  </div>`;
+
+  const respHTML = `
+  <div class="section">
+    <div class="sec-title">&#128100; Desempeño por Responsable</div>
+    <table>
+      <thead><tr>
+        <th>Responsable</th><th style="text-align:center">Asignadas</th>
+        <th style="text-align:center">Abiertas</th><th style="text-align:center">Vencidas</th>
+        <th style="text-align:center">Cerradas</th>
+        <th style="width:18%">Cumplimiento</th><th style="text-align:center">%</th>
+      </tr></thead>
+      <tbody>
+        ${Object.entries(byResp).sort((a,b)=>{
+          const pa=a[1].length?a[1].filter(i=>i.estado==="Cerrado").length/a[1].length:0;
+          const pb=b[1].length?b[1].filter(i=>i.estado==="Cerrado").length/b[1].length:0;
+          return pb-pa;
+        }).map(([resp,list],idx)=>{
+          const t=list.length, c=list.filter(i=>i.estado==="Cerrado").length;
+          const v=list.filter(i=>i.estado==="Vencido"||(i.estado!=="Cerrado"&&new Date(i.fechaCompromiso)<now)).length;
+          const p=t?Math.round(c/t*100):0;
+          const col=p>=80?"#276749":p>=50?"#b7791f":"#c53030";
+          return `<tr style="background:${idx%2===0?"#fff":"#fafafa"}">
+            <td style="font-weight:700">${resp}</td>
+            <td style="text-align:center">${t}</td>
+            <td style="text-align:center;color:#b7791f">${t-c}</td>
+            <td style="text-align:center;color:#c53030;font-weight:${v>0?700:400}">${v}</td>
+            <td style="text-align:center;color:#276749">${c}</td>
+            <td>${barHtml(p,col)}</td>
+            <td style="text-align:center;font-weight:800;color:${col}">${p}%</td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  </div>`;
+
+  const cierresHTML = cerrados.length === 0 ? "" : `
+  <div class="section">
+    <div class="sec-title green-title">&#10003; Registro de Actividades Cerradas (${cerrados.length})</div>
+    <table>
+      <thead><tr>
+        <th style="width:30%">Actividad</th><th style="width:10%">Área</th>
+        <th style="width:12%">Responsable</th><th style="width:13%">Fecha Cierre</th>
+        <th>Comentario de Cierre</th>
+      </tr></thead>
+      <tbody>
+        ${[...cerrados].sort((a,b)=>new Date(b.fechaCierre)-new Date(a.fechaCierre)).map((i,idx)=>`
+        <tr style="background:${idx%2===0?"#fff":"#fafafa"}">
+          <td style="font-weight:700;font-size:12px">${i.nombre}</td>
+          <td style="font-size:11px">${i.area}</td>
+          <td style="font-size:11px">${i.responsable}</td>
+          <td style="font-size:11px;color:#276749">${fdt(i.fechaCierre)}</td>
+          <td style="font-size:11px;color:#4a5568;font-style:italic">${i.comentarioCierre||'<span style="color:#a0aec0">Sin comentario</span>'}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>
+  </div>`;
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Reporte Ejecutivo PENDOP – ${dateStr}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;color:#1a202c;background:#fff;font-size:13px;line-height:1.5}
+.toolbar{display:flex;gap:10px;align-items:center;padding:14px 32px;background:#f7fafc;border-bottom:2px solid #e2e8f0;position:sticky;top:0;z-index:10}
+.toolbar-title{font-weight:800;font-size:14px;color:#2d3748;flex:1}
+.btn-print{background:#f6a623;color:#000;border:none;border-radius:8px;padding:10px 24px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}
+.btn-close{background:transparent;color:#4a5568;border:1px solid #cbd5e0;border-radius:8px;padding:10px 20px;font-size:13px;cursor:pointer;font-family:inherit}
+.page{max-width:960px;margin:0 auto;padding:0 32px 48px}
+.cover{background:linear-gradient(135deg,#1a202c 0%,#2d3748 55%,#1a2035 100%);color:#fff;padding:40px 36px 36px;margin:0 -32px 32px}
+.cover-row{display:flex;align-items:center;gap:14px;margin-bottom:28px}
+.cover-icon{font-size:38px}
+.cover-brand{font-size:26px;font-weight:900;color:#f6a623;letter-spacing:3px}
+.cover-sub{font-size:11px;color:#a0aec0;background:rgba(255,255,255,0.1);padding:3px 10px;border-radius:20px;margin-top:4px;display:inline-block}
+.cover-h1{font-size:20px;font-weight:700;color:#f6a623;margin-bottom:4px}
+.cover-date{font-size:12px;color:#a0aec0;margin-bottom:24px}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-top:24px}
+.kpi{background:rgba(255,255,255,0.09);border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:16px 10px;text-align:center}
+.kpi-val{font-size:30px;font-weight:900;font-family:monospace}
+.kpi-lbl{font-size:10px;color:#a0aec0;text-transform:uppercase;letter-spacing:.07em;margin-top:3px}
+.section{margin-bottom:28px}
+.sec-title{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#f6a623;border-bottom:2px solid #f6a623;padding-bottom:5px;margin-bottom:14px}
+.red-title{color:#c53030;border-bottom-color:#c53030}
+.green-title{color:#276749;border-bottom-color:#276749}
+.stats3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
+.stat{border:1px solid #e2e8f0;border-radius:10px;padding:14px;text-align:center}
+.stat-val{font-size:26px;font-weight:900;font-family:monospace}
+.stat-lbl{font-size:10px;color:#718096;text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.bar-lbl{width:120px;font-size:12px;font-weight:600;flex-shrink:0}
+.bar-track{flex:1;background:#e2e8f0;border-radius:3px;height:9px}
+.bar-fill{height:9px;border-radius:3px}
+.bar-pct{width:32px;text-align:right;font-size:11px;font-weight:700;color:#718096}
+.bar-detail{font-size:10px;color:#a0aec0;white-space:nowrap}
+.alert-box{border-left:4px solid #c53030;background:#fff5f5;border-radius:0 8px 8px 0;padding:11px 14px;margin-bottom:8px}
+.alert-name{font-weight:700;font-size:13px;color:#1a202c}
+.badge-alta{background:#fff5f5;color:#c53030;border:1px solid #c5303055;border-radius:4px;padding:1px 7px;font-size:10px;font-weight:700;vertical-align:middle}
+.alert-meta{font-size:11px;color:#718096;margin-top:4px;display:flex;gap:14px;flex-wrap:wrap}
+.obs{font-size:11px;color:#4a5568;font-style:italic;margin-top:5px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#2d3748;color:#e2e8f0;padding:8px 10px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+td{padding:7px 10px;border-bottom:1px solid #edf2f7;vertical-align:top}
+tr:last-child td{border-bottom:none}
+.footer{text-align:center;color:#a0aec0;font-size:10px;border-top:1px solid #e2e8f0;padding-top:14px;margin-top:36px}
+@media print{
+  .toolbar{display:none!important}
+  .page{padding:0 20px}
+  .cover{margin:0 -20px 24px;padding:30px 24px}
+  .kpis{grid-template-columns:repeat(5,1fr)}
+  .stats3{grid-template-columns:repeat(3,1fr)}
+  body{font-size:11px}
+  .section{page-break-inside:avoid}
+  .alert-box{page-break-inside:avoid}
+  @page{margin:1.2cm 1cm}
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <div class="toolbar-title">&#128202; Reporte Ejecutivo — PENDOP Campo Pendare</div>
+  <button class="btn-print" onclick="window.print()">&#128438; Imprimir / Guardar PDF</button>
+  <button class="btn-close" onclick="window.close()">&#10005; Cerrar</button>
+</div>
+
+<div class="page">
+
+  <!-- PORTADA -->
+  <div class="cover">
+    <div class="cover-row">
+      <span class="cover-icon">&#128226;</span>
+      <div>
+        <div class="cover-brand">PENDOP</div>
+        <span class="cover-sub">Sistema de Pendientes Operativos</span>
+      </div>
+    </div>
+    <div class="cover-h1">Reporte Ejecutivo de Actividades Operativas</div>
+    <div class="cover-date">&#128205; Campo Pendare &nbsp;|&nbsp; &#128197; ${dateStr} &nbsp;|&nbsp; &#128336; Generado: ${timeStr}</div>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-val" style="color:#e2e8f0">${items.length}</div><div class="kpi-lbl">Total</div></div>
+      <div class="kpi"><div class="kpi-val" style="color:#fc8181">${vencidos.length}</div><div class="kpi-lbl">Vencidos</div></div>
+      <div class="kpi"><div class="kpi-val" style="color:#f6a623">${criticos.length}</div><div class="kpi-lbl">Críticos</div></div>
+      <div class="kpi"><div class="kpi-val" style="color:#68d391">${cerrados.length}</div><div class="kpi-lbl">Cerrados</div></div>
+      <div class="kpi"><div class="kpi-val" style="color:${pctTotal>=80?"#68d391":pctTotal>=50?"#f6a623":"#fc8181"}">${pctTotal}%</div><div class="kpi-lbl">Cumplimiento</div></div>
+    </div>
+  </div>
+
+  <!-- RESUMEN EJECUTIVO -->
+  <div class="section">
+    <div class="sec-title">&#128202; Resumen Ejecutivo</div>
+    <div class="stats3">
+      <div class="stat" style="border-color:#c5303055">
+        <div class="stat-val" style="color:#c53030">${vencidos.length}</div>
+        <div class="stat-lbl">Vencidas</div>
+      </div>
+      <div class="stat" style="border-color:#2b6cb055">
+        <div class="stat-val" style="color:#2b6cb0">${enProceso.length}</div>
+        <div class="stat-lbl">En Proceso</div>
+      </div>
+      <div class="stat" style="border-color:#b7791f55">
+        <div class="stat-val" style="color:#b7791f">${pendientes.length}</div>
+        <div class="stat-lbl">Pendientes</div>
+      </div>
+    </div>
+    ${["Alta","Media","Baja"].map(p => {
+      const tot = items.filter(i => i.prioridad === p);
+      const don = tot.filter(i => i.estado === "Cerrado");
+      const pct = tot.length ? Math.round(don.length / tot.length * 100) : 0;
+      const col = p === "Alta" ? "#c53030" : p === "Media" ? "#b7791f" : "#718096";
+      return `<div class="bar-row">
+        <div class="bar-lbl" style="color:${col}">${p} Prioridad</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
+        <div class="bar-pct">${pct}%</div>
+        <div class="bar-detail">${don.length}/${tot.length} cerradas</div>
+      </div>`;
+    }).join("")}
+  </div>
+
+  ${alertasHTML}
+  ${actividadesHTML}
+  ${areaHTML}
+  ${respHTML}
+  ${cierresHTML}
+
+  <div class="footer">
+    <div>Reporte generado el ${dateStr} a las ${timeStr} &nbsp;•&nbsp; PENDOP – Sistema de Pendientes Operativos Campo Pendare</div>
+    <div style="margin-top:3px">Documento de uso interno &nbsp;•&nbsp; Área Operativa</div>
+  </div>
+
+</div>
+</body>
+</html>`;
+
+  const w = window.open("", "_blank");
+  if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 900); }
+}
+
 // ─── REPORTES ────────────────────────────────────────────────────────────────
 function Reportes({ items }) {
   const [tipo, setTipo] = useState("abiertos");
@@ -407,6 +732,21 @@ ${Object.entries(byResp).map(([k,v])=>`• ${k}: ${v.filter(i=>i.estado==="Cerra
 
   return (
     <div>
+      {/* BOTÓN REPORTE EJECUTIVO */}
+      <button onClick={()=>generarReporteEjecutivo(items)} style={{
+        width:"100%", background:`linear-gradient(135deg,#1a202c,#2d3748)`,
+        border:`2px solid ${COLORS.accent}`, borderRadius:12,
+        padding:"14px 16px", marginBottom:16, cursor:"pointer",
+        display:"flex", alignItems:"center", justifyContent:"center", gap:10
+      }}>
+        <span style={{fontSize:20}}>📄</span>
+        <div style={{textAlign:"left"}}>
+          <div style={{color:COLORS.accent,fontWeight:900,fontSize:14,letterSpacing:"0.04em"}}>REPORTE EJECUTIVO</div>
+          <div style={{color:COLORS.textMuted,fontSize:11,marginTop:1}}>PDF completo · Avances · Análisis por área y responsable</div>
+        </div>
+        <span style={{color:COLORS.accent,fontSize:18,marginLeft:"auto"}}>↗</span>
+      </button>
+
       <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
         {tabs.map(t=>(
           <button key={t.k} onClick={()=>setTipo(t.k)} style={{
