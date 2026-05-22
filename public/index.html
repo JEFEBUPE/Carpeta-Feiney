@@ -14,6 +14,7 @@
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f1923; color: #e0e8f0; min-height: 100vh; }
@@ -213,6 +214,10 @@
     style="display:none; align-items:center; gap:6px; padding:8px 14px; font-size:0.8rem; margin-left:8px;">
     📲 Instalar App
   </button>
+  <div id="syncStatus" style="display:none; align-items:center; gap:6px; padding:6px 12px; border-radius:20px; font-size:0.72rem; font-weight:700; background:#0c2030; border:1px solid #1e3550; margin-left:8px;">
+    <span id="syncDot" style="width:7px;height:7px;border-radius:50%;background:#5a7a95;display:inline-block;"></span>
+    <span id="syncText" style="color:#5a7a95">Conectando...</span>
+  </div>
 </div>
 
 <div class="container">
@@ -389,14 +394,79 @@ let filteredData = [...wellsData];
 let aguaFilter = 'todos';
 let pendingUploadData = null;
 
+// ── SUPABASE ──────────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://uxioaamncwwmyslfyhvj.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_yCiPhj_IXTXwhxn8Ymie8w_jES4jJF5';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+function setSyncStatus(state) {
+  const el  = document.getElementById('syncStatus');
+  const dot = document.getElementById('syncDot');
+  const txt = document.getElementById('syncText');
+  if (!el) return;
+  el.style.display = 'flex';
+  const map = {
+    connecting: { color: '#5a7a95', text: 'Conectando...' },
+    live:       { color: '#00cc88', text: '● En vivo' },
+    offline:    { color: '#ff6644', text: 'Sin conexión' },
+    saving:     { color: '#ffaa00', text: 'Guardando...' },
+  };
+  const s = map[state] || map.connecting;
+  dot.style.background = s.color;
+  txt.textContent = s.text;
+  txt.style.color  = s.color;
+}
+
+async function loadFromSupabase() {
+  setSyncStatus('connecting');
+  try {
+    const { data, error } = await db.from('pozos').select('*');
+    if (error) throw error;
+    if (data && data.length > 0) {
+      wellsData = data;
+    } else {
+      const { error: seedErr } = await db.from('pozos').upsert(ORIGINAL_DATA, { onConflict: 'pozo' });
+      if (seedErr) throw seedErr;
+      wellsData = [...ORIGINAL_DATA];
+    }
+    setSyncStatus('live');
+  } catch (e) {
+    console.warn('Supabase no disponible, usando datos locales:', e.message);
+    setSyncStatus('offline');
+    wellsData = [...ORIGINAL_DATA];
+  }
+  filteredData = [...wellsData];
+  populateWellSelect();
+  applyFilters();
+}
+
+function subscribeRealtime() {
+  db.channel('pozos-sync')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'pozos' }, payload => {
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+        const idx = wellsData.findIndex(w => w.pozo === payload.new.pozo);
+        if (idx >= 0) wellsData[idx] = payload.new;
+        else wellsData.push(payload.new);
+      } else if (payload.eventType === 'DELETE') {
+        wellsData = wellsData.filter(w => w.pozo !== payload.old.pozo);
+      }
+      filteredData = [...wellsData];
+      populateWellSelect();
+      applyFilters();
+    })
+    .subscribe(status => {
+      if (status === 'SUBSCRIBED') setSyncStatus('live');
+    });
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('headerDate').innerHTML =
     `Fecha: <strong>${new Date().toLocaleDateString('es-CO', {day:'2-digit',month:'long',year:'numeric'})}</strong><br>
      <span style="color:#3a5a7a">CPO-13 · Área Operativa Colombia</span>`;
 
-  populateWellSelect();
-  applyFilters();
+  await loadFromSupabase();
+  subscribeRealtime();
 });
 
 function populateWellSelect() {
@@ -746,20 +816,28 @@ function showUploadPreview(data, fname) {
     </div>`;
 }
 
-function confirmUpdate() {
+async function confirmUpdate() {
   if (!pendingUploadData) return;
+  setSyncStatus('saving');
   const existing = new Map(wellsData.map(w => [w.pozo, w]));
   pendingUploadData.forEach(w => existing.set(w.pozo, w));
   wellsData = [...existing.values()];
   filteredData = [...wellsData];
 
+  try {
+    const { error } = await db.from('pozos').upsert(pendingUploadData, { onConflict: 'pozo' });
+    if (error) throw error;
+    setSyncStatus('live');
+    showUploadStatus(`✅ Datos sincronizados en la nube. ${wellsData.length} pozos en total.`, 'success');
+  } catch (e) {
+    setSyncStatus('offline');
+    showUploadStatus(`⚠️ Actualizado localmente. Error al sincronizar: ${e.message}`, 'error');
+  }
+
   populateWellSelect();
   applyFilters();
-
   document.getElementById('uploadPreview').style.display = 'none';
-  showUploadStatus(`✅ Datos actualizados correctamente. ${wellsData.length} pozos en total.`, 'success');
   pendingUploadData = null;
-
   setTimeout(() => switchTab('tab-tabla'), 1200);
 }
 
