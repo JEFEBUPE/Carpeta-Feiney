@@ -117,6 +117,157 @@ const SAMPLE = [
   { id:5, nombre:"Calibración transmisor FT-102", descripcion:"Mantenimiento preventivo programado", area:"Instrumentación", equipo:"FT-102", responsable:"Jorge Mesa", prioridad:"Baja", fechaCompromiso: new Date(Date.now()-86400000).toISOString(), estado:"Cerrado", observaciones:"Completado sin novedad", fechaCierre: new Date(Date.now()-3600000).toISOString(), comentarioCierre:"Calibrado y verificado en SCADA" },
 ];
 
+// ─── AUTH ────────────────────────────────────────────────────────────────────
+const ACCESS_KEY = "Pendare2024";
+
+function LoginScreen({ onLogin }) {
+  const [pwd, setPwd] = useState("");
+  const [error, setError] = useState(false);
+  const [shake, setShake] = useState(false);
+  const check = () => {
+    if (pwd === ACCESS_KEY) { onLogin(); }
+    else { setError(true); setShake(true); setTimeout(()=>{ setError(false); setShake(false); }, 1500); }
+  };
+  return (
+    <div style={{
+      minHeight:"100vh", background:COLORS.bg, display:"flex", flexDirection:"column",
+      alignItems:"center", justifyContent:"center", padding:24,
+      fontFamily:"'Segoe UI', system-ui, sans-serif"
+    }}>
+      <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}`}</style>
+      <div style={{ marginBottom:28, textAlign:"center" }}>
+        <div style={{ fontSize:52, marginBottom:10 }}>🛢️</div>
+        <div style={{ fontWeight:900, fontSize:24, color:COLORS.accent, letterSpacing:"0.08em" }}>PENDOP</div>
+        <div style={{ color:COLORS.textMuted, fontSize:13, marginTop:4 }}>Campo Pendare · Acceso restringido</div>
+      </div>
+      <div style={{
+        width:"100%", maxWidth:320, background:COLORS.surface, borderRadius:18, padding:28,
+        border:`1px solid ${error?COLORS.red:COLORS.border}`,
+        boxShadow:"0 8px 32px #0006",
+        animation: shake ? "shake 0.4s ease" : "none",
+        transition:"border 0.3s"
+      }}>
+        <label style={{ display:"block", fontSize:11, color:COLORS.textMuted, marginBottom:8, letterSpacing:"0.08em", textTransform:"uppercase" }}>
+          Clave de acceso
+        </label>
+        <input
+          type="password" value={pwd}
+          onChange={e=>setPwd(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&check()}
+          placeholder="••••••••••"
+          autoFocus
+          style={{
+            width:"100%", background:COLORS.bg,
+            border:`1px solid ${error?COLORS.red:COLORS.border}`,
+            borderRadius:10, padding:"13px 14px", color:COLORS.text, fontSize:18,
+            outline:"none", boxSizing:"border-box", fontFamily:"inherit",
+            marginBottom:error?8:14, letterSpacing:"0.15em", textAlign:"center"
+          }}
+        />
+        {error && <div style={{ color:COLORS.red, fontSize:12, marginBottom:12, textAlign:"center", fontWeight:700 }}>❌ Clave incorrecta</div>}
+        <button onClick={check} style={{
+          width:"100%", background:COLORS.accent, color:"#000", border:"none",
+          borderRadius:10, padding:"13px", fontSize:15, fontWeight:800,
+          cursor:"pointer", fontFamily:"inherit", letterSpacing:"0.04em"
+        }}>Ingresar →</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── VOZ ─────────────────────────────────────────────────────────────────────
+function parseVoiceText(text) {
+  const t = text.toLowerCase();
+  const result = {};
+  if (/\balta\b/.test(t)) result.prioridad = "Alta";
+  else if (/\bbaja\b/.test(t)) result.prioridad = "Baja";
+  else result.prioridad = "Media";
+  const areaMap = {
+    "cpf":"CPF","cargadero":"Cargadero","cluster":"Clusters","clusters":"Clusters",
+    "pozos":"Pozos","pozo":"Pozos","hse":"HSE","mantenimiento":"Mantenimiento",
+    "producción":"Producción","produccion":"Producción","scada":"SCADA",
+    "instrumentación":"Instrumentación","instrumentacion":"Instrumentación"
+  };
+  for (const [key,val] of Object.entries(areaMap)) {
+    if (t.includes(key)) { result.area = val; break; }
+  }
+  const now = new Date();
+  if (/pasado mañana|pasado manana/.test(t)) {
+    const d = new Date(now); d.setDate(d.getDate()+2); d.setHours(8,0,0,0);
+    result.fechaCompromiso = d.toISOString().slice(0,16);
+  } else if (/mañana|manana/.test(t)) {
+    const d = new Date(now); d.setDate(d.getDate()+1); d.setHours(8,0,0,0);
+    result.fechaCompromiso = d.toISOString().slice(0,16);
+  } else if (/\bhoy\b/.test(t)) {
+    const d = new Date(now); d.setHours(18,0,0,0);
+    result.fechaCompromiso = d.toISOString().slice(0,16);
+  }
+  const respMatch = text.match(/(?:responsable|encargado)[:\s]+([A-ZÁÉÍÓÚÑa-záéíóúñ\s]{3,30}?)(?:\s*,|\s*\.|$)/i);
+  if (respMatch) result.responsable = respMatch[1].trim();
+  const equipoMatch = text.match(/(?:equipo|sistema|válvula|valvula|sensor|transmisor|bomba|compresor)[:\s]+([A-Za-z0-9\-]{3,20})/i)
+    || text.match(/\b([A-Z]{2,5}-[A-Z0-9]{2,10})\b/);
+  if (equipoMatch) result.equipo = equipoMatch[1];
+  result.nombre = text.length > 80 ? text.slice(0,80) : text;
+  result.descripcion = text;
+  return result;
+}
+
+function VoiceButton({ onFill }) {
+  const [listening, setListening] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [supported] = useState(() => !!(window.SpeechRecognition || window.webkitSpeechRecognition));
+  const recRef = React.useRef(null);
+  useEffect(() => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    const rec = new SR();
+    rec.lang = "es-CO";
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.onresult = e => {
+      const text = e.results[0][0].transcript;
+      setTranscript(text);
+      onFill(parseVoiceText(text));
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recRef.current = rec;
+  }, []);
+  const toggle = () => {
+    if (!recRef.current) return;
+    if (listening) { recRef.current.stop(); }
+    else { setTranscript(""); recRef.current.start(); setListening(true); }
+  };
+  if (!supported) return null;
+  return (
+    <div style={{ marginBottom:18 }}>
+      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
+      <button onClick={toggle} style={{
+        width:"100%", background: listening ? COLORS.red+"18" : COLORS.accent+"18",
+        border:`2px solid ${listening ? COLORS.red : COLORS.accent}`,
+        borderRadius:12, padding:"14px 16px", cursor:"pointer", fontFamily:"inherit",
+        display:"flex", alignItems:"center", gap:12
+      }}>
+        <span style={{ fontSize:28 }}>{listening ? "⏹️" : "🎙️"}</span>
+        <div style={{ textAlign:"left", flex:1 }}>
+          <div style={{ color: listening ? COLORS.red : COLORS.accent, fontWeight:800, fontSize:14 }}>
+            {listening ? "Grabando… toca para detener" : "Dictar actividad por voz"}
+          </div>
+          <div style={{ color:COLORS.textMuted, fontSize:11, marginTop:2 }}>
+            {listening ? "Di el nombre, área, responsable y fecha" : "Rellena el formulario hablando"}
+          </div>
+        </div>
+        {listening && <span style={{ width:12, height:12, borderRadius:"50%", background:COLORS.red, display:"inline-block", animation:"pulse 1s infinite" }} />}
+      </button>
+      {transcript && (
+        <div style={{ marginTop:8, padding:"10px 12px", background:COLORS.surfaceAlt, borderRadius:8, fontSize:12, color:COLORS.textMuted, lineHeight:1.5 }}>
+          <span style={{ color:COLORS.accent, fontWeight:700 }}>Transcripción: </span>{transcript}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── COMPONENTES UI ─────────────────────────────────────────────────────────
 function Badge({ color, children }) {
   return (
@@ -236,8 +387,10 @@ function FormPendiente({ initial, onSave, onCancel }) {
   const [f, setF] = useState(initial || blank);
   const set = k => v => setF(p=>({...p,[k]:v}));
   const valid = f.nombre && f.area && f.responsable && f.fechaCompromiso;
+  const fillVoice = fields => setF(p => ({ ...p, ...Object.fromEntries(Object.entries(fields).filter(([,v])=>v)) }));
   return (
     <div>
+      {!initial && <VoiceButton onFill={fillVoice} />}
       <Input label="Nombre de la actividad" value={f.nombre} onChange={set("nombre")} required placeholder="Ej: Revisar válvula XV-001" />
       <Textarea label="Descripción" value={f.descripcion} onChange={set("descripcion")} placeholder="Detalle de la actividad…" />
       <Select label="Área" value={f.area} onChange={set("area")} options={AREAS} required />
@@ -1141,7 +1294,12 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+function Root() {
+  const [auth, setAuth] = useState(() => sessionStorage.getItem("pendop_auth") === "1");
+  const login = () => { sessionStorage.setItem("pendop_auth","1"); setAuth(true); };
+  return auth ? <App /> : <LoginScreen onLogin={login} />;
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
 </script>
 </body>
 </html>
