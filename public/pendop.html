@@ -455,7 +455,7 @@ function FormPosponer({ onPosponer, onCancel }) {
 }
 
 // ─── TARJETA PENDIENTE ───────────────────────────────────────────────────────
-function TarjetaPendiente({ item, onCerrar, onPosponer, onEditar }) {
+function TarjetaPendiente({ item, onCerrar, onPosponer, onEditar, onEliminar }) {
   const c = getColor(item);
   const [expand, setExpand] = useState(false);
   return (
@@ -494,13 +494,14 @@ function TarjetaPendiente({ item, onCerrar, onPosponer, onEditar }) {
               ✅ Cerrado: {formatDateTime(item.fechaCierre)} — {item.comentarioCierre || "Sin comentario"}
             </div>
           )}
-          {item.estado !== "Cerrado" && (
-            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+            {item.estado !== "Cerrado" && <>
               <Btn small variant="success" onClick={()=>onCerrar(item.id)}>✅ Cerrar</Btn>
               <Btn small variant="ghost" onClick={()=>onPosponer(item.id)}>⏱ Posponer</Btn>
               <Btn small variant="ghost" onClick={()=>onEditar(item)}>✏️ Editar</Btn>
-            </div>
-          )}
+            </>}
+            <Btn small variant="danger" onClick={()=>onEliminar(item.id)}>🗑️ Eliminar</Btn>
+          </div>
         </div>
       )}
     </div>
@@ -881,16 +882,28 @@ function Reportes({ items }) {
   items.forEach(i=>{ if(!byArea[i.area])byArea[i.area]=[]; byArea[i.area].push(i); });
 
   const turnoText = `📋 *ENTREGA DE TURNO — PENDIENTES OPERATIVOS*
-📅 ${new Date().toLocaleDateString("es-CO",{weekday:"long",day:"2-digit",month:"long",year:"numeric"})}
+📅 ${new Date().toLocaleDateString("es-CO",{weekday:"long",day:"2-digit",month:"long",year:"numeric"})} — ${new Date().toLocaleTimeString("es-CO",{hour:"2-digit",minute:"2-digit"})}
 
 ⚠️ VENCIDOS (${vencidos.length}):
-${vencidos.map(i=>`• ${i.nombre} [${i.area}] — ${i.responsable}`).join("\n")||"• Ninguno"}
+${vencidos.map(i=>[
+  `• [${i.prioridad}] ${i.nombre} [${i.area}]${i.equipo?` ⚙️${i.equipo}`:""}`,
+  `  👤 ${i.responsable} | 📅 Venció: ${formatDateTime(i.fechaCompromiso)}`,
+  i.observaciones ? `  📝 ${i.observaciones}` : ""
+].filter(Boolean).join("\n")).join("\n")||"• Ninguno"}
 
 🔄 ABIERTOS (${abiertos.filter(i=>i.estado!=="Vencido").length}):
-${abiertos.filter(i=>i.estado!=="Vencido").map(i=>`• ${i.nombre} — ${i.responsable} — ${formatDate(i.fechaCompromiso)}`).join("\n")||"• Ninguno"}
+${abiertos.filter(i=>i.estado!=="Vencido").map(i=>[
+  `• [${i.prioridad}] ${i.nombre} [${i.area}]${i.equipo?` ⚙️${i.equipo}`:""}`,
+  `  👤 ${i.responsable} | 📅 Vence: ${formatDate(i.fechaCompromiso)} | ${i.estado}`,
+  i.observaciones ? `  📝 ${i.observaciones}` : ""
+].filter(Boolean).join("\n")).join("\n")||"• Ninguno"}
 
 ✅ CERRADOS HOY (${cerrados.length}):
-${cerrados.map(i=>`• ${i.nombre} — ${i.comentarioCierre||"Sin comentario"}`).join("\n")||"• Ninguno"}
+${cerrados.map(i=>[
+  `• ${i.nombre} [${i.area}]`,
+  `  👤 ${i.responsable} | ⏱ ${formatDateTime(i.fechaCierre)}`,
+  `  💬 ${i.comentarioCierre||"Sin comentario"}`
+].join("\n")).join("\n")||"• Ninguno"}
 
 _Generado automáticamente por SistemaOP Campo Pendare_`;
 
@@ -1021,6 +1034,7 @@ function App() {
   const [modalEditar, setModalEditar] = useState(null);
   const [modalCerrar, setModalCerrar] = useState(null);
   const [modalPosponer, setModalPosponer] = useState(null);
+  const [modalEliminar, setModalEliminar] = useState(null);
   const [nextId, setNextId] = useState(() => {
     try {
       const saved = localStorage.getItem("pendop_items");
@@ -1141,6 +1155,14 @@ function App() {
     catch(e) { console.warn('Error al posponer:', e.message); setSyncStatus('offline'); }
   };
 
+  const eliminarItem = async (id) => {
+    setItems(p=>p.filter(i=>i.id!==id));
+    setModalEliminar(null);
+    showNotif("🗑️ Pendiente eliminado", COLORS.red);
+    try { await db.from('pendientes').delete().eq('id', id); }
+    catch(e) { console.warn('Error al eliminar:', e.message); setSyncStatus('offline'); }
+  };
+
   const filtered = items.filter(i=>{
     if(filtroArea && i.area!==filtroArea) return false;
     if(filtroResp && !i.responsable.toLowerCase().includes(filtroResp.toLowerCase())) return false;
@@ -1214,7 +1236,7 @@ function App() {
               <div>
                 <div style={{ fontSize:12, color:COLORS.red, fontWeight:800, textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:8 }}>⚠️ Críticos</div>
                 {items.filter(i=>i.prioridad==="Alta"&&i.estado!=="Cerrado").map(i=>(
-                  <TarjetaPendiente key={i.id} item={i} onCerrar={id=>setModalCerrar(id)} onPosponer={id=>setModalPosponer(id)} onEditar={setModalEditar} />
+                  <TarjetaPendiente key={i.id} item={i} onCerrar={id=>setModalCerrar(id)} onPosponer={id=>setModalPosponer(id)} onEditar={setModalEditar} onEliminar={id=>setModalEliminar(id)} />
                 ))}
               </div>
             )}
@@ -1248,7 +1270,7 @@ function App() {
             {filtered.length===0
               ? <div style={{ textAlign:"center", color:COLORS.textMuted, padding:40 }}>No hay pendientes con estos filtros</div>
               : filtered.map(i=>(
-                <TarjetaPendiente key={i.id} item={i} onCerrar={id=>setModalCerrar(id)} onPosponer={id=>setModalPosponer(id)} onEditar={setModalEditar} />
+                <TarjetaPendiente key={i.id} item={i} onCerrar={id=>setModalCerrar(id)} onPosponer={id=>setModalPosponer(id)} onEditar={setModalEditar} onEliminar={id=>setModalEliminar(id)} />
               ))
             }
           </>
@@ -1289,6 +1311,16 @@ function App() {
       </Modal>
       <Modal open={!!modalPosponer} onClose={()=>setModalPosponer(null)} title="Posponer Recordatorio">
         <FormPosponer onPosponer={ms=>posponerItem(modalPosponer,ms)} onCancel={()=>setModalPosponer(null)} />
+      </Modal>
+      <Modal open={!!modalEliminar} onClose={()=>setModalEliminar(null)} title="Eliminar Pendiente">
+        <p style={{ color:COLORS.textMuted, fontSize:13, marginTop:0, marginBottom:18, lineHeight:1.6 }}>
+          ⚠️ ¿Está seguro de que desea eliminar este pendiente?<br/>
+          <span style={{ color:COLORS.red, fontWeight:700 }}>Esta acción no se puede deshacer.</span>
+        </p>
+        <div style={{ display:"flex", gap:10 }}>
+          <Btn variant="ghost" onClick={()=>setModalEliminar(null)} full>Cancelar</Btn>
+          <Btn variant="danger" onClick={()=>eliminarItem(modalEliminar)} full>🗑️ Sí, eliminar</Btn>
+        </div>
       </Modal>
     </div>
   );
